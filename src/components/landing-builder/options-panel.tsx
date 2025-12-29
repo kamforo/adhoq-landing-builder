@@ -31,7 +31,7 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
         <div className="space-y-2">
           <Label htmlFor="textHandling">Text Handling</Label>
           <Select
-            value={options.textHandling || 'keep'}
+            value={options.textHandling || 'rewrite-slight'}
             onValueChange={(v) => updateOption('textHandling', v as TextHandling)}
           >
             <SelectTrigger id="textHandling">

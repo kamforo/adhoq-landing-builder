@@ -19,7 +19,7 @@ export default function Home() {
 
   // State for generation options
   const [options, setOptions] = useState<Partial<GenerationOptions>>({
-    textHandling: 'keep',
+    textHandling: 'rewrite-slight',  // Default to rewriting text
     imageHandling: 'keep',
     linkHandling: 'keep',
     variationCount: 1,

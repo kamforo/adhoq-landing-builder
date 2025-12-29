@@ -43,6 +43,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log the options for debugging
+    console.log('Generation options:', {
+      textHandling: fullOptions.textHandling,
+      variationCount: fullOptions.variationCount,
+      creativity: fullOptions.creativity,
+    });
+
     // Generate variations
     const results = await generateVariations(sourcePage, fullOptions);
 
