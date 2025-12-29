@@ -25,7 +25,12 @@ export async function scrapeLandingPageFromUrl(url: string): Promise<ParsedLandi
   }
 
   const html = await response.text();
-  const baseUrl = new URL(url).origin;
+
+  // Use full URL path as base (for relative paths like ./dist/css/main.css)
+  const urlObj = new URL(url);
+  const pathParts = urlObj.pathname.split('/');
+  pathParts.pop(); // Remove last segment (file or empty)
+  const baseUrl = urlObj.origin + pathParts.join('/');
 
   return parseHtmlContent(html, { sourceUrl: url, baseUrl, fetchAssets: true });
 }
@@ -92,7 +97,8 @@ export async function parseHtmlContent(
 async function inlineExternalCSS($: cheerio.CheerioAPI, baseUrl: string): Promise<void> {
   const cssLinks: Array<{ el: cheerio.Cheerio<Element>; href: string }> = [];
 
-  $('link[rel="stylesheet"]').each((_, el) => {
+  // Match both quoted and unquoted rel=stylesheet
+  $('link[rel="stylesheet"], link[rel=stylesheet]').each((_, el) => {
     const $el = $(el);
     const href = $el.attr('href');
     if (href && !href.startsWith('data:')) {
@@ -261,8 +267,26 @@ function resolveUrl(url: string, baseUrl: string): string {
   if (url.startsWith('data:')) return url;
   if (url.startsWith('//')) return `https:${url}`;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (url.startsWith('/')) return `${baseUrl}${url}`;
-  return `${baseUrl}/${url}`;
+
+  // Handle ./ relative paths
+  if (url.startsWith('./')) {
+    url = url.substring(2);
+  }
+
+  if (url.startsWith('/')) {
+    // Get origin only (protocol + host)
+    try {
+      const urlObj = new URL(baseUrl);
+      return `${urlObj.origin}${url}`;
+    } catch {
+      return `${baseUrl}${url}`;
+    }
+  }
+
+  // For relative paths, append to baseUrl (which should include path)
+  // Remove trailing slash from baseUrl if present
+  const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+  return `${base}${url}`;
 }
 
 /**
