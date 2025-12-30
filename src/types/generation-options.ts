@@ -37,6 +37,9 @@ export interface GenerationOptions {
   // CTA/Redirect URL override (if not detected or needs to be changed)
   ctaUrlOverride?: string;
 
+  // Number of steps/questions for multi-step landers (default: auto-detect from source)
+  stepCount?: number;
+
   // Add elements to page
   addElements?: AddElementOptions;
 

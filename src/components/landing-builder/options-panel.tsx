@@ -145,30 +145,58 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
           </p>
         </div>
 
-        {/* Vertical Selection - shown when generating new layout */}
+        {/* Vertical Selection & Step Count - shown when generating new layout */}
         {(options.styleHandling === 'generate-new' || options.styleHandling === 'restyle-complete') && (
-          <div className="space-y-2 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
-            <Label htmlFor="vertical">Content Vertical</Label>
-            <Select
-              value={options.vertical || 'auto'}
-              onValueChange={(v) => updateOption('vertical', v as DatingVertical)}
-            >
-              <SelectTrigger id="vertical">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="adult">Adult Dating (Explicit)</SelectItem>
-                <SelectItem value="casual">Casual Dating (Sexy, not explicit)</SelectItem>
-                <SelectItem value="mainstream">Mainstream Dating (SFW)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {options.vertical === 'adult' && 'Bold colors, provocative imagery and language'}
-              {options.vertical === 'casual' && 'Warm tones, flirty but tasteful content'}
-              {options.vertical === 'mainstream' && 'Professional, wholesome, relationship-focused'}
-              {(!options.vertical || options.vertical === 'auto') && 'AI will detect based on page content'}
-            </p>
+          <div className="space-y-4 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
+            <div className="space-y-2">
+              <Label htmlFor="vertical">Content Vertical</Label>
+              <Select
+                value={options.vertical || 'auto'}
+                onValueChange={(v) => updateOption('vertical', v as DatingVertical)}
+              >
+                <SelectTrigger id="vertical">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto-detect</SelectItem>
+                  <SelectItem value="adult">Adult Dating (Explicit)</SelectItem>
+                  <SelectItem value="casual">Casual Dating (Sexy, not explicit)</SelectItem>
+                  <SelectItem value="mainstream">Mainstream Dating (SFW)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {options.vertical === 'adult' && 'Bold colors, provocative imagery and language'}
+                {options.vertical === 'casual' && 'Warm tones, flirty but tasteful content'}
+                {options.vertical === 'mainstream' && 'Professional, wholesome, relationship-focused'}
+                {(!options.vertical || options.vertical === 'auto') && 'AI will detect based on page content'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stepCount">Number of Steps/Questions</Label>
+              <Select
+                value={String(options.stepCount || 'auto')}
+                onValueChange={(v) => updateOption('stepCount', v === 'auto' ? undefined : parseInt(v))}
+              >
+                <SelectTrigger id="stepCount">
+                  <SelectValue placeholder="Auto-detect" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto-detect from source</SelectItem>
+                  <SelectItem value="3">3 steps</SelectItem>
+                  <SelectItem value="4">4 steps</SelectItem>
+                  <SelectItem value="5">5 steps</SelectItem>
+                  <SelectItem value="6">6 steps</SelectItem>
+                  <SelectItem value="7">7 steps</SelectItem>
+                  <SelectItem value="8">8 steps</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {options.stepCount
+                  ? `Generate ${options.stepCount} quiz questions before final redirect`
+                  : 'Will match the number of steps from the source page'}
+              </p>
+            </div>
           </div>
         )}
 

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { analyzeWithAI } from '@/lib/analyzer/ai-analyzer';
+import { writeBuilderPrompt } from '@/lib/prompt-writer';
+import { buildVariations } from '@/lib/builder-agent';
 import { analyzeLandingPage } from '@/lib/analyzer';
 import { buildLandingPage } from '@/lib/builder';
-import { generateNewLayout, generateFallbackLayout, detectVertical, type DatingVertical } from '@/lib/builder/layout-generator';
-import { getLLMProvider } from '@/lib/llm';
 import type { ParsedLandingPage, GenerationOptions } from '@/types';
 import type { BuildOptions, TextBuildOptions, StyleBuildOptions } from '@/types/builder';
+import type { DatingVertical } from '@/types/component-analysis';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,218 +32,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('=== Using Analyzer + Builder Agents ===');
-    console.log('Options:', {
-      textHandling: options.textHandling,
-      styleHandling: options.styleHandling,
-      vertical: options.vertical,
-      variationCount,
-      creativity: options.creativity,
-      addElements: options.addElements,
-    });
-
-    // Step 1: Analyze the page using Analyzer Agent
-    console.log('Step 1: Analyzing page...');
-    const analysis = await analyzeLandingPage(sourcePage.html, sourcePage.sourceUrl);
-    console.log('Analysis complete:', {
-      sections: analysis.sections.length,
-      headlines: analysis.components.headlines.length,
-      buttons: analysis.components.buttons.length,
-      persuasionElements: analysis.persuasionElements.length,
-    });
-
-    // Apply CTA URL override if provided
-    if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
-      console.log('Applying CTA URL override:', options.ctaUrlOverride);
-      analysis.lpFlow.ctaStrategy.primaryCtaUrl = options.ctaUrlOverride.trim();
-    }
-
-    // If no CTA URL found by analyzer, try to get it from parsed links
-    if (!analysis.lpFlow.ctaStrategy.primaryCtaUrl || analysis.lpFlow.ctaStrategy.primaryCtaUrl === '#') {
-      console.log('Analyzer did not find CTA URL, checking parsed links...');
-
-      // Priority order: cta > affiliate > tracking > redirect
-      const ctaLink = sourcePage.links?.find(l => l.type === 'cta' && l.originalUrl !== '#');
-      const affiliateLink = sourcePage.links?.find(l => l.type === 'affiliate');
-      const trackingLink = sourcePage.links?.find(l => l.type === 'tracking' && l.originalUrl.startsWith('http'));
-      const redirectLink = sourcePage.links?.find(l => l.type === 'redirect');
-
-      const bestLink = ctaLink || affiliateLink || trackingLink || redirectLink;
-
-      if (bestLink) {
-        console.log('Found tracking link from parser:', bestLink.type, bestLink.originalUrl);
-        analysis.lpFlow.ctaStrategy.primaryCtaUrl = bestLink.originalUrl;
-      } else {
-        console.warn('WARNING: No CTA/tracking URL detected anywhere!');
-      }
-    }
-
-    // Check if we need to generate a completely new layout
+    // Check if we should use the new 3-agent workflow
     if (options.styleHandling === 'generate-new') {
-      // Determine vertical (auto-detect or use user selection)
-      let vertical: DatingVertical | undefined;
-      if (options.vertical && options.vertical !== 'auto') {
-        vertical = options.vertical as DatingVertical;
-      } else {
-        vertical = detectVertical(analysis);
-      }
-      console.log('Step 2: Generating completely new layout...');
-      console.log('Detected/Selected vertical:', vertical);
-      console.log('LP Flow type:', analysis.lpFlow.type, 'with', analysis.lpFlow.stages.length, 'stages');
-      console.log('CTA URL:', analysis.lpFlow.ctaStrategy.primaryCtaUrl || 'NOT SET!');
-
-      const llm = getLLMProvider('grok');
-
-      const buildOptions: BuildOptions = {
-        sourceAnalysis: analysis,
-        includeSections: 'all',
-        componentOptions: {
-          includeHeadlines: true,
-          includeImages: true,
-          includeForms: true,
-          includeButtons: true,
-          includeLists: true,
-          includeVideos: true,
-          imageHandling: options.imageHandling === 'keep' ? 'keep' : 'placeholder',
-        },
-        addElements: options.addElements || {},
-        styleOptions: { colorScheme: 'keep', fontHandling: 'keep' },
-        textOptions: {
-          handling: 'keep',
-          creativity: options.creativity || 0.7,
-        },
-        variationCount,
-      };
-
-      // Generate new layouts
-      const variations = [];
-      for (let i = 0; i < variationCount; i++) {
-        try {
-          const html = await generateNewLayout(analysis, buildOptions, llm, vertical);
-          variations.push({
-            id: `new-layout-${Date.now()}-${i}`,
-            sourcePageId: sourcePage.id || 'unknown',
-            variationNumber: i + 1,
-            html,
-            assets: [],
-            changes: [{ type: 'structure', selector: 'html', originalValue: '', newValue: '', reason: 'Generated completely new layout' }],
-            generatedAt: new Date(),
-          });
-        } catch (error) {
-          console.error('Layout generation failed, using fallback:', error);
-          const html = generateFallbackLayout(analysis);
-          variations.push({
-            id: `fallback-${Date.now()}-${i}`,
-            sourcePageId: sourcePage.id || 'unknown',
-            variationNumber: i + 1,
-            html,
-            assets: [],
-            changes: [{ type: 'structure', selector: 'html', originalValue: '', newValue: '', reason: 'Generated fallback layout' }],
-            generatedAt: new Date(),
-          });
-        }
-      }
-
-      console.log('New layout generation complete:', { variations: variations.length });
-
-      return NextResponse.json({
-        success: true,
-        variations,
-        count: variations.length,
-        analysis: {
-          id: analysis.id,
-          sections: analysis.sections.length,
-          components: {
-            headlines: analysis.components.headlines.length,
-            buttons: analysis.components.buttons.length,
-            images: analysis.components.images.length,
-          },
-          persuasionElements: analysis.persuasionElements.length,
-          lpFlow: {
-            type: analysis.lpFlow.type,
-            stages: analysis.lpFlow.stages.length,
-            framework: analysis.lpFlow.framework,
-          },
-          detectedVertical: vertical,
-        },
-      });
+      return handleNewAgentWorkflow(sourcePage, options, variationCount);
     }
 
-    // Step 2: Map GenerationOptions to BuildOptions (for non-generate-new modes)
-    const textHandling = mapTextHandling(options.textHandling || 'keep');
-    const styleOptions = mapStyleHandling(options.styleHandling || 'keep');
-
-    const buildOptions: BuildOptions = {
-      sourceAnalysis: analysis,
-      includeSections: 'all',
-      componentOptions: {
-        includeHeadlines: true,
-        includeImages: true,
-        includeForms: true,
-        includeButtons: true,
-        includeLists: true,
-        includeVideos: true,
-        imageHandling: options.imageHandling === 'placeholder' ? 'placeholder' : 'keep',
-      },
-      addElements: options.addElements || {},
-      styleOptions,
-      textOptions: {
-        handling: textHandling,
-        instructions: options.textInstructions,
-        preserveKeywords: options.preserveKeywords,
-        creativity: options.creativity || 0.7,
-      },
-      variationCount,
-    };
-
-    // Step 3: Build the page using Builder Agent
-    console.log('Step 2: Building page with options:', {
-      textHandling: buildOptions.textOptions.handling,
-      styleOptions: buildOptions.styleOptions,
-      addElements: Object.keys(buildOptions.addElements).filter(k =>
-        (buildOptions.addElements as Record<string, { enabled?: boolean }>)[k]?.enabled
-      ),
-    });
-
-    const buildResults = await buildLandingPage(buildOptions);
-    console.log('Build complete:', {
-      variations: buildResults.length,
-      changes: buildResults[0]?.changes.length,
-      addedElements: buildResults[0]?.addedElements,
-    });
-
-    // Step 4: Convert BuildResult to GenerationResult format for compatibility
-    const variations = buildResults.map((result, index) => ({
-      id: result.id,
-      sourcePageId: sourcePage.id || 'unknown',
-      variationNumber: index + 1,
-      html: result.html,
-      assets: [],
-      changes: result.changes.map(c => ({
-        type: c.type,
-        selector: c.selector || '',
-        originalValue: c.before || '',
-        newValue: c.after || '',
-        reason: c.description,
-      })),
-      generatedAt: result.builtAt,
-    }));
-
-    return NextResponse.json({
-      success: true,
-      variations,
-      count: variations.length,
-      analysis: {
-        id: analysis.id,
-        sections: analysis.sections.length,
-        components: {
-          headlines: analysis.components.headlines.length,
-          buttons: analysis.components.buttons.length,
-          images: analysis.components.images.length,
-        },
-        persuasionElements: analysis.persuasionElements.length,
-      },
-    });
+    // Fall back to old workflow for non-generate-new modes
+    return handleLegacyWorkflow(sourcePage, options, variationCount);
   } catch (error) {
     console.error('Generate error:', error);
     return NextResponse.json(
@@ -249,6 +46,244 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * NEW 3-Agent Workflow:
+ * 1. Analyzer (Cheerio + Grok) - Break down components
+ * 2. Prompt Writer (Grok) - Write custom prompt
+ * 3. Builder (Grok) - Generate HTML
+ */
+async function handleNewAgentWorkflow(
+  sourcePage: ParsedLandingPage,
+  options: Partial<GenerationOptions>,
+  variationCount: number
+) {
+  console.log('=== NEW 3-AGENT WORKFLOW ===');
+  console.log('Options:', {
+    vertical: options.vertical,
+    variationCount,
+    creativity: options.creativity,
+  });
+
+  // ===== STEP 1: AI ANALYZER =====
+  console.log('\n📊 Step 1: AI Analyzer (Cheerio + Grok)...');
+  const analysis = await analyzeWithAI(sourcePage.html, sourcePage.sourceUrl);
+
+  // Apply tracking URL override if provided
+  if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+    console.log('Applying tracking URL override:', options.ctaUrlOverride);
+    analysis.trackingUrl = options.ctaUrlOverride.trim();
+  }
+
+  // Fall back to parsed links if no tracking URL found
+  if (!analysis.trackingUrl) {
+    console.log('No tracking URL from analyzer, checking parsed links...');
+    const bestLink = findBestTrackingLink(sourcePage);
+    if (bestLink) {
+      console.log('Found tracking link from parser:', bestLink);
+      analysis.trackingUrl = bestLink;
+    } else {
+      console.warn('WARNING: No tracking URL detected anywhere!');
+    }
+  }
+
+  // Override vertical if user selected one
+  if (options.vertical && options.vertical !== 'auto') {
+    analysis.vertical = options.vertical as DatingVertical;
+  }
+
+  // Override step count if user specified one
+  if (options.stepCount && options.stepCount > 0) {
+    analysis.flow.totalSteps = options.stepCount;
+    console.log('Overriding step count to:', options.stepCount);
+  }
+
+  console.log('Analysis complete:', {
+    components: analysis.components.length,
+    critical: analysis.components.filter(c => c.importance === 'critical').length,
+    flow: analysis.flow.type,
+    vertical: analysis.vertical,
+    tone: analysis.tone,
+    trackingUrl: analysis.trackingUrl || 'NOT SET!',
+  });
+
+  // ===== STEP 2: PROMPT WRITER =====
+  console.log('\n✍️ Step 2: Prompt Writer...');
+  const builderPrompt = await writeBuilderPrompt(analysis);
+  console.log('Prompt written:', {
+    hasSystemContext: !!builderPrompt.systemContext,
+    hasRequirements: !!builderPrompt.requirements,
+    hasSuggestions: !!builderPrompt.suggestions,
+    promptLength: builderPrompt.fullPrompt.length,
+  });
+
+  // ===== STEP 3: BUILDER =====
+  console.log('\n🔨 Step 3: Builder...');
+  const buildResults = await buildVariations(builderPrompt, analysis, variationCount);
+  console.log('Build complete:', {
+    variations: buildResults.length,
+    successful: buildResults.filter(r => r.success).length,
+  });
+
+  // Convert to response format
+  const variations = buildResults.map((result, index) => ({
+    id: result.id,
+    sourcePageId: sourcePage.id || 'unknown',
+    variationNumber: index + 1,
+    html: result.html,
+    assets: [],
+    changes: [{
+      type: 'structure' as const,
+      selector: 'html',
+      originalValue: '',
+      newValue: '',
+      reason: result.success ? 'Generated with 3-agent workflow' : `Fallback: ${result.error}`,
+    }],
+    generatedAt: result.generatedAt,
+  }));
+
+  return NextResponse.json({
+    success: true,
+    variations,
+    count: variations.length,
+    workflow: '3-agent',
+    analysis: {
+      id: analysis.id,
+      components: analysis.components.length,
+      criticalComponents: analysis.components.filter(c => c.importance === 'critical').length,
+      flow: analysis.flow,
+      vertical: analysis.vertical,
+      tone: analysis.tone,
+      strategySummary: analysis.strategySummary,
+      trackingUrl: analysis.trackingUrl,
+    },
+    prompt: {
+      length: builderPrompt.fullPrompt.length,
+      preview: builderPrompt.systemContext?.slice(0, 200) + '...',
+    },
+  });
+}
+
+/**
+ * Find best tracking link from parsed page
+ */
+function findBestTrackingLink(sourcePage: ParsedLandingPage): string | null {
+  if (!sourcePage.links || sourcePage.links.length === 0) return null;
+
+  // Priority order: cta > affiliate > tracking > redirect
+  const ctaLink = sourcePage.links.find(l => l.type === 'cta' && l.originalUrl !== '#');
+  const affiliateLink = sourcePage.links.find(l => l.type === 'affiliate');
+  const trackingLink = sourcePage.links.find(l => l.type === 'tracking' && l.originalUrl.startsWith('http'));
+  const redirectLink = sourcePage.links.find(l => l.type === 'redirect');
+
+  const bestLink = ctaLink || affiliateLink || trackingLink || redirectLink;
+  return bestLink?.originalUrl || null;
+}
+
+/**
+ * Legacy workflow for non-generate-new modes
+ */
+async function handleLegacyWorkflow(
+  sourcePage: ParsedLandingPage,
+  options: Partial<GenerationOptions>,
+  variationCount: number
+) {
+  console.log('=== LEGACY WORKFLOW ===');
+  console.log('Options:', {
+    textHandling: options.textHandling,
+    styleHandling: options.styleHandling,
+    variationCount,
+  });
+
+  // Step 1: Analyze the page using old Analyzer
+  console.log('Step 1: Analyzing page (Cheerio only)...');
+  const analysis = await analyzeLandingPage(sourcePage.html, sourcePage.sourceUrl);
+  console.log('Analysis complete:', {
+    sections: analysis.sections.length,
+    headlines: analysis.components.headlines.length,
+    buttons: analysis.components.buttons.length,
+  });
+
+  // Apply CTA URL override if provided
+  if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+    analysis.lpFlow.ctaStrategy.primaryCtaUrl = options.ctaUrlOverride.trim();
+  }
+
+  // Fall back to parsed links if no CTA URL
+  if (!analysis.lpFlow.ctaStrategy.primaryCtaUrl || analysis.lpFlow.ctaStrategy.primaryCtaUrl === '#') {
+    const bestLink = findBestTrackingLink(sourcePage);
+    if (bestLink) {
+      analysis.lpFlow.ctaStrategy.primaryCtaUrl = bestLink;
+    }
+  }
+
+  // Map options and build
+  const textHandling = mapTextHandling(options.textHandling || 'keep');
+  const styleOptions = mapStyleHandling(options.styleHandling || 'keep');
+
+  const buildOptions: BuildOptions = {
+    sourceAnalysis: analysis,
+    includeSections: 'all',
+    componentOptions: {
+      includeHeadlines: true,
+      includeImages: true,
+      includeForms: true,
+      includeButtons: true,
+      includeLists: true,
+      includeVideos: true,
+      imageHandling: options.imageHandling === 'placeholder' ? 'placeholder' : 'keep',
+    },
+    addElements: options.addElements || {},
+    styleOptions,
+    textOptions: {
+      handling: textHandling,
+      instructions: options.textInstructions,
+      preserveKeywords: options.preserveKeywords,
+      creativity: options.creativity || 0.7,
+    },
+    variationCount,
+  };
+
+  console.log('Step 2: Building page...');
+  const buildResults = await buildLandingPage(buildOptions);
+  console.log('Build complete:', {
+    variations: buildResults.length,
+  });
+
+  // Convert to response format
+  const variations = buildResults.map((result, index) => ({
+    id: result.id,
+    sourcePageId: sourcePage.id || 'unknown',
+    variationNumber: index + 1,
+    html: result.html,
+    assets: [],
+    changes: result.changes.map(c => ({
+      type: c.type,
+      selector: c.selector || '',
+      originalValue: c.before || '',
+      newValue: c.after || '',
+      reason: c.description,
+    })),
+    generatedAt: result.builtAt,
+  }));
+
+  return NextResponse.json({
+    success: true,
+    variations,
+    count: variations.length,
+    workflow: 'legacy',
+    analysis: {
+      id: analysis.id,
+      sections: analysis.sections.length,
+      components: {
+        headlines: analysis.components.headlines.length,
+        buttons: analysis.components.buttons.length,
+        images: analysis.components.images.length,
+      },
+      persuasionElements: analysis.persuasionElements.length,
+    },
+  });
 }
 
 // Map text handling option
@@ -267,33 +302,20 @@ function mapTextHandling(handling: string): TextBuildOptions['handling'] {
 function mapStyleHandling(handling: string): StyleBuildOptions {
   switch (handling) {
     case 'modify-colors':
-      return {
-        colorScheme: 'generate-new',
-        fontHandling: 'keep',
-      };
+      return { colorScheme: 'generate-new', fontHandling: 'keep' };
     case 'modify-layout':
       return {
         colorScheme: 'keep',
         fontHandling: 'modern',
-        layoutAdjustments: {
-          addPadding: true,
-          centerContent: true,
-        },
+        layoutAdjustments: { addPadding: true, centerContent: true },
       };
     case 'restyle-complete':
       return {
         colorScheme: 'generate-new',
         fontHandling: 'modern',
-        layoutAdjustments: {
-          maxWidth: '1200px',
-          addPadding: true,
-          centerContent: true,
-        },
+        layoutAdjustments: { maxWidth: '1200px', addPadding: true, centerContent: true },
       };
     default:
-      return {
-        colorScheme: 'keep',
-        fontHandling: 'keep',
-      };
+      return { colorScheme: 'keep', fontHandling: 'keep' };
   }
 }
