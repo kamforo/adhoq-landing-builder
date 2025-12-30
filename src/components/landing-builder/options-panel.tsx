@@ -44,20 +44,20 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
         <CardTitle className="text-lg">Generation Options</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* CTA/Redirect URL Override */}
+        {/* Tracking Link */}
         <div className="space-y-2 p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
           <Label htmlFor="ctaUrlOverride" className="font-medium">
-            Redirect/CTA URL <span className="text-red-500">*</span>
+            Tracking Link <span className="text-red-500">*</span>
           </Label>
           <Input
             id="ctaUrlOverride"
             type="url"
-            placeholder="https://your-tracking-link.com/..."
+            placeholder="https://your-tracking-link.com/?sub1=..."
             value={options.ctaUrlOverride || ''}
             onChange={(e) => updateOption('ctaUrlOverride', e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Where users go after completing the quiz. Override detected URL or enter if not found.
+            All CTAs and final redirect will point here. Override auto-detected or enter manually.
           </p>
         </div>
 

@@ -47,9 +47,9 @@ export function AnalysisResults({ analysis }: AnalysisResultsProps) {
                 {lpFlow.ctaStrategy.ctaFrequency}
               </Badge>
             </div>
-            {/* CTA URL - show warning if missing */}
+            {/* Tracking Link - show warning if missing */}
             <div className="flex items-start gap-2">
-              <span className="text-muted-foreground shrink-0">Redirect URL:</span>
+              <span className="text-muted-foreground shrink-0">Tracking Link:</span>
               {lpFlow.ctaStrategy.primaryCtaUrl ? (
                 <span className="font-mono text-green-600 dark:text-green-400 break-all text-xs">
                   {lpFlow.ctaStrategy.primaryCtaUrl.slice(0, 60)}
@@ -57,7 +57,7 @@ export function AnalysisResults({ analysis }: AnalysisResultsProps) {
                 </span>
               ) : (
                 <span className="text-red-500 font-medium">
-                  ⚠️ Not detected - Enter manually in options below
+                  ⚠️ Not detected - Enter in options
                 </span>
               )}
             </div>
