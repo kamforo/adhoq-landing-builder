@@ -1,5 +1,7 @@
 // Types for generation options
 
+import type { AddElementOptions } from './builder';
+
 export type TextHandling = 'keep' | 'rewrite-slight' | 'rewrite-complete';
 export type ImageHandling = 'keep' | 'placeholder' | 'ai-generate';
 export type LinkHandling = 'keep' | 'replace-custom' | 'remove-tracking';
@@ -27,6 +29,9 @@ export interface GenerationOptions {
   // Text customization
   textInstructions?: string; // Custom instructions for AI text rewriting
   preserveKeywords?: string[]; // Keywords to keep unchanged
+
+  // Add elements to page
+  addElements?: AddElementOptions;
 
   // Output settings
   outputFormat: OutputFormat;
