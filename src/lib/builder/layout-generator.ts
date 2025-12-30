@@ -112,33 +112,38 @@ ${verticalStyle.description}
 ## QUESTIONS TO INCLUDE (in this order)
 ${questions.map((q, i) => `${i + 1}. "${q}"`).join('\n')}
 
+## CRITICAL: FINAL REDIRECT STEP
+After the last question, the user MUST be redirected to: ${ctaUrl}
+This redirect is MANDATORY. The flow must end with window.location.href = "${ctaUrl}"
+
 ## FLOW STRUCTURE
-- Total Steps: ${questions.length}
+- Total Steps: ${questions.length} questions + automatic redirect
 - Flow Type: Multi-step quiz funnel
 - Each step shows ONE question with Yes/No or multiple choice buttons
-- Progress indicator showing current step (e.g., "Question 2/9")
-- Final step redirects to: ${ctaUrl}
+- Progress indicator showing current step (e.g., "Question 2/${questions.length}")
+- After answering the LAST question, immediately redirect to: ${ctaUrl}
 
 ## IMAGES TO USE
 ${originalImages.length > 0 ? `Use these EXACT image URLs from the original page:\n${originalImages.slice(0, 5).map(img => `- ${img}`).join('\n')}` : 'Use placeholder images appropriate for the dating vertical'}
 
-## DESIGN REQUIREMENTS
-- Color scheme: ${verticalStyle.colors}
-- Mood: ${verticalStyle.mood}
-- Full-screen steps with centered content
-- Large, tappable buttons (Yes/No style for most questions)
-- Progress bar or step indicator at top
-- Background image or gradient fitting the ${vertical} dating vertical
-- Mobile-first, responsive design
-- Smooth fade transitions between steps
+## DESIGN - BE CREATIVE!
+You have creative freedom with the design. Here are some ideas but feel free to explore:
+- Try different color schemes, gradients, or dark/light themes
+- Experiment with button styles (rounded, sharp, gradient, outlined)
+- Try different layouts (centered, split-screen, card-based)
+- Use interesting typography combinations
+- Add subtle animations or visual effects
+- The mood should fit ${vertical} dating but interpret it creatively
 
-## CRITICAL TECHNICAL REQUIREMENTS
+Suggestions (not requirements): ${verticalStyle.suggestions}
+
+## TECHNICAL REQUIREMENTS
 Generate a SINGLE HTML file with embedded JavaScript that:
 1. Has a questionList array with all questions
 2. Shows only ONE step at a time (others are display:none)
 3. Has nextStep() function that hides current and shows next
 4. Tracks activeIndex for current step
-5. Final step redirects to: ${ctaUrl}
+5. MUST redirect to ${ctaUrl} after the last question
 6. Include proper viewport meta tag
 7. Use inline styles, no external CSS frameworks
 8. Progress indicator updates with each step
@@ -149,11 +154,19 @@ const questionList = [
   { question: "...", type: "yesno" }, // or type: "choice" with options array
   ...
 ];
+const REDIRECT_URL = "${ctaUrl}"; // CRITICAL: Must redirect here after last question
 let activeIndex = 0;
 
 function showStep(index) { /* show only step[index], hide others */ }
-function nextStep() { activeIndex++; if (activeIndex >= questionList.length) redirect(); else showStep(activeIndex); }
-function redirect() { window.location.href = "${ctaUrl}"; }
+function nextStep() {
+  activeIndex++;
+  if (activeIndex >= questionList.length) {
+    // MUST redirect after last question
+    window.location.href = REDIRECT_URL;
+  } else {
+    showStep(activeIndex);
+  }
+}
 \`\`\`
 
 Generate ONLY the complete HTML code. Start with <!DOCTYPE html> and end with </html>.`;
@@ -200,6 +213,8 @@ async function generateStaticLayout(
 
   const sectionOrder = lpFlow.stages.map(s => `${s.order}. ${s.sectionType} (${s.purpose})${s.hasCtaButton ? ' [CTA]' : ''}`);
 
+  const ctaUrl = lpFlow.ctaStrategy.primaryCtaUrl || buttons[0]?.url || '#';
+
   const prompt = `You are an expert landing page designer. Generate a complete, modern HTML landing page.
 
 ## VERTICAL: ${vertical.toUpperCase()} DATING
@@ -220,14 +235,14 @@ ${lpFlow.messagingFlow.benefits?.length ? `- Benefits: ${lpFlow.messagingFlow.be
 ${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 
 ## Call-to-Action
-Primary CTA: "${lpFlow.ctaStrategy.primaryCta}" → ${lpFlow.ctaStrategy.primaryCtaUrl || buttons[0]?.url || '#'}
+Primary CTA: "${lpFlow.ctaStrategy.primaryCta}" → ${ctaUrl}
+ALL buttons and CTAs MUST link to: ${ctaUrl}
 
-## Design Requirements
-- Color scheme: ${verticalStyle.colors}
-- Mood: ${verticalStyle.mood}
+## DESIGN - BE CREATIVE!
+You have creative freedom with the design. Suggestions: ${verticalStyle.suggestions}
 - Modern, professional design
 - Mobile-responsive with inline styles
-- Ensure all CTA buttons link to: ${lpFlow.ctaStrategy.primaryCtaUrl || buttons[0]?.url || '#'}
+- Try different color schemes, layouts, and typography
 
 Generate ONLY the complete HTML code. Start with <!DOCTYPE html> and end with </html>.`;
 
@@ -246,32 +261,29 @@ Generate ONLY the complete HTML code. Start with <!DOCTYPE html> and end with </
 }
 
 /**
- * Get styling guidance based on vertical
+ * Get styling guidance based on vertical - these are SUGGESTIONS, not requirements
+ * The LLM has creative freedom to explore different themes
  */
 function getVerticalStyle(vertical: DatingVertical): {
-  colors: string;
-  mood: string;
+  suggestions: string;
   description: string;
 } {
   switch (vertical) {
     case 'adult':
       return {
-        colors: 'Dark backgrounds (black, deep purple, dark red), neon accents (pink, red, purple), gold highlights',
-        mood: 'Seductive, bold, provocative, intimate',
-        description: 'This is an ADULT dating site. Content can be explicit and sexually suggestive. Use sultry imagery, bold colors, and provocative language. Images should feature attractive adults in intimate/suggestive poses (but not explicit).',
+        suggestions: 'Dark themes, neon accents, bold gradients, seductive vibes - but feel free to try other approaches like luxurious gold/black, modern minimalist dark, or vibrant party themes',
+        description: 'This is an ADULT dating site. Content can be explicit and sexually suggestive. The design should feel exciting and intimate.',
       };
     case 'casual':
       return {
-        colors: 'Warm tones (coral, peach, soft pink), with dark accents. Romantic but playful.',
-        mood: 'Flirty, fun, exciting, spontaneous',
-        description: 'This is a CASUAL dating site. Content is sexy but not explicit. Focus on chemistry, attraction, and fun. Images should be attractive and slightly suggestive but tasteful.',
+        suggestions: 'Warm colors, playful vibes, fun gradients - but also try modern dark themes, sunset palettes, or energetic bright colors',
+        description: 'This is a CASUAL dating site. Content is sexy but not explicit. The design should feel fun and exciting.',
       };
     case 'mainstream':
     default:
       return {
-        colors: 'Professional and warm (rose gold, soft purple, teal), clean whites',
-        mood: 'Romantic, trustworthy, genuine, hopeful',
-        description: 'This is a MAINSTREAM dating site. Content is completely SFW. Focus on relationships, connection, and finding love. Images should be wholesome, showing happy couples or friendly singles.',
+        suggestions: 'Clean, professional, trustworthy - try soft pastels, modern gradients, or warm earth tones. Can also be bold and confident.',
+        description: 'This is a MAINSTREAM dating site. Content is completely SFW. Focus on connection and finding love.',
       };
   }
 }
