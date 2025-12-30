@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeLandingPage } from '@/lib/analyzer';
 import { buildLandingPage } from '@/lib/builder';
-import { generateNewLayout, generateFallbackLayout } from '@/lib/builder/layout-generator';
+import { generateNewLayout, generateFallbackLayout, detectVertical, type DatingVertical } from '@/lib/builder/layout-generator';
 import { getLLMProvider } from '@/lib/llm';
 import type { ParsedLandingPage, GenerationOptions } from '@/types';
 import type { BuildOptions, TextBuildOptions, StyleBuildOptions } from '@/types/builder';
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     console.log('Options:', {
       textHandling: options.textHandling,
       styleHandling: options.styleHandling,
+      vertical: options.vertical,
       variationCount,
       creativity: options.creativity,
       addElements: options.addElements,
@@ -51,7 +52,17 @@ export async function POST(request: NextRequest) {
 
     // Check if we need to generate a completely new layout
     if (options.styleHandling === 'generate-new') {
+      // Determine vertical (auto-detect or use user selection)
+      let vertical: DatingVertical | undefined;
+      if (options.vertical && options.vertical !== 'auto') {
+        vertical = options.vertical as DatingVertical;
+      } else {
+        vertical = detectVertical(analysis);
+      }
       console.log('Step 2: Generating completely new layout...');
+      console.log('Detected/Selected vertical:', vertical);
+      console.log('LP Flow type:', analysis.lpFlow.type, 'with', analysis.lpFlow.stages.length, 'stages');
+
       const llm = getLLMProvider('grok');
 
       const buildOptions: BuildOptions = {
@@ -64,7 +75,7 @@ export async function POST(request: NextRequest) {
           includeButtons: true,
           includeLists: true,
           includeVideos: true,
-          imageHandling: 'keep',
+          imageHandling: options.imageHandling === 'keep' ? 'keep' : 'placeholder',
         },
         addElements: options.addElements || {},
         styleOptions: { colorScheme: 'keep', fontHandling: 'keep' },
@@ -79,7 +90,7 @@ export async function POST(request: NextRequest) {
       const variations = [];
       for (let i = 0; i < variationCount; i++) {
         try {
-          const html = await generateNewLayout(analysis, buildOptions, llm);
+          const html = await generateNewLayout(analysis, buildOptions, llm, vertical);
           variations.push({
             id: `new-layout-${Date.now()}-${i}`,
             sourcePageId: sourcePage.id || 'unknown',
@@ -119,6 +130,12 @@ export async function POST(request: NextRequest) {
             images: analysis.components.images.length,
           },
           persuasionElements: analysis.persuasionElements.length,
+          lpFlow: {
+            type: analysis.lpFlow.type,
+            stages: analysis.lpFlow.stages.length,
+            framework: analysis.lpFlow.framework,
+          },
+          detectedVertical: vertical,
         },
       });
     }

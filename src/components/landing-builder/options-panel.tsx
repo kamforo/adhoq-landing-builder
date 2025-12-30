@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import type { GenerationOptions, TextHandling, ImageHandling, LinkHandling, StyleHandling } from '@/types';
+import type { GenerationOptions, TextHandling, ImageHandling, LinkHandling, StyleHandling, DatingVertical } from '@/types';
 import type { AddElementOptions } from '@/types/builder';
 
 interface OptionsPanelProps {
@@ -125,6 +125,33 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
               : 'How AI should modify the visual appearance'}
           </p>
         </div>
+
+        {/* Vertical Selection - shown when generating new layout */}
+        {(options.styleHandling === 'generate-new' || options.styleHandling === 'restyle-complete') && (
+          <div className="space-y-2 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
+            <Label htmlFor="vertical">Content Vertical</Label>
+            <Select
+              value={options.vertical || 'auto'}
+              onValueChange={(v) => updateOption('vertical', v as DatingVertical)}
+            >
+              <SelectTrigger id="vertical">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto-detect</SelectItem>
+                <SelectItem value="adult">Adult Dating (Explicit)</SelectItem>
+                <SelectItem value="casual">Casual Dating (Sexy, not explicit)</SelectItem>
+                <SelectItem value="mainstream">Mainstream Dating (SFW)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {options.vertical === 'adult' && 'Bold colors, provocative imagery and language'}
+              {options.vertical === 'casual' && 'Warm tones, flirty but tasteful content'}
+              {options.vertical === 'mainstream' && 'Professional, wholesome, relationship-focused'}
+              {(!options.vertical || options.vertical === 'auto') && 'AI will detect based on page content'}
+            </p>
+          </div>
+        )}
 
         <Separator />
 
