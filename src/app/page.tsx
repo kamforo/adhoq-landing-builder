@@ -22,6 +22,7 @@ export default function Home() {
     textHandling: 'rewrite-slight',  // Default to rewriting text
     imageHandling: 'keep',
     linkHandling: 'keep',
+    styleHandling: 'keep',  // Default to keeping original styles
     variationCount: 1,
     variationStyle: 'moderate',
     creativity: 0.7,

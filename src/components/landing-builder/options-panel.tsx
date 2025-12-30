@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import type { GenerationOptions, TextHandling, ImageHandling, LinkHandling } from '@/types';
+import type { GenerationOptions, TextHandling, ImageHandling, LinkHandling, StyleHandling } from '@/types';
 
 interface OptionsPanelProps {
   options: Partial<GenerationOptions>;
@@ -82,6 +82,28 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
               <SelectItem value="replace-custom">Replace with Custom</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Style Handling */}
+        <div className="space-y-2">
+          <Label htmlFor="styleHandling">Style Handling</Label>
+          <Select
+            value={options.styleHandling || 'keep'}
+            onValueChange={(v) => updateOption('styleHandling', v as StyleHandling)}
+          >
+            <SelectTrigger id="styleHandling">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">Keep Original Styles</SelectItem>
+              <SelectItem value="modify-colors">Modify Colors Only</SelectItem>
+              <SelectItem value="modify-layout">Modify Layout & Fonts</SelectItem>
+              <SelectItem value="restyle-complete">Complete Restyle</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            How AI should modify the visual appearance
+          </p>
         </div>
 
         <Separator />

@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
       textHandling: options.textHandling || 'keep',
       imageHandling: options.imageHandling || 'keep',
       linkHandling: options.linkHandling || 'keep',
+      styleHandling: options.styleHandling || 'keep',
       variationCount: options.variationCount || 1,
       variationStyle: options.variationStyle || 'moderate',
       linkReplacements: options.linkReplacements || [],
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
     // Log the options for debugging
     console.log('Generation options:', {
       textHandling: fullOptions.textHandling,
+      styleHandling: fullOptions.styleHandling,
       variationCount: fullOptions.variationCount,
       creativity: fullOptions.creativity,
     });

@@ -11,6 +11,7 @@ import type {
 import { modifyTextBatch } from './text-modifier';
 import { processLinks } from './link-processor';
 import { processTrackingCodes } from './tracking-processor';
+import { modifyStyles } from './style-modifier';
 
 /**
  * Generate variations of a landing page
@@ -70,6 +71,12 @@ async function generateSingleVariation(
     // Use batch rewriting for efficiency (single API call)
     const textChanges = await modifyTextBatch($, sourcePage.textContent, options, llm);
     changes.push(...textChanges);
+  }
+
+  // 5. Modify styles if requested
+  if (options.styleHandling && options.styleHandling !== 'keep') {
+    const styleChanges = await modifyStyles($, options, llm);
+    changes.push(...styleChanges);
   }
 
   // Get the final HTML

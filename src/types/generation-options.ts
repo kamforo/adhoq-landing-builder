@@ -3,6 +3,7 @@
 export type TextHandling = 'keep' | 'rewrite-slight' | 'rewrite-complete';
 export type ImageHandling = 'keep' | 'placeholder' | 'ai-generate';
 export type LinkHandling = 'keep' | 'replace-custom' | 'remove-tracking';
+export type StyleHandling = 'keep' | 'modify-colors' | 'modify-layout' | 'restyle-complete';
 export type OutputFormat = 'single-html' | 'full-folder' | 'zip';
 
 export interface GenerationOptions {
@@ -10,6 +11,7 @@ export interface GenerationOptions {
   textHandling: TextHandling;
   imageHandling: ImageHandling;
   linkHandling: LinkHandling;
+  styleHandling: StyleHandling;
 
   // Variation settings
   variationCount: number; // 1-10
@@ -64,7 +66,7 @@ export interface GeneratedAsset {
 }
 
 export interface ChangeLog {
-  type: 'text' | 'link' | 'tracking' | 'asset' | 'structure';
+  type: 'text' | 'link' | 'tracking' | 'asset' | 'structure' | 'style';
   selector: string;
   originalValue: string;
   newValue: string;
@@ -76,6 +78,7 @@ export const DEFAULT_GENERATION_OPTIONS: GenerationOptions = {
   textHandling: 'keep',
   imageHandling: 'keep',
   linkHandling: 'keep',
+  styleHandling: 'keep',
   variationCount: 1,
   variationStyle: 'moderate',
   linkReplacements: [],
