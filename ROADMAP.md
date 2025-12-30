@@ -13,12 +13,13 @@
 Input Page(s) → Analyzer Agent → Component Map → Builder Agent → Output
 ```
 
-### Analyzer Agent
-- [ ] Extract page sections (hero, features, testimonials, CTA, footer)
-- [ ] Identify components (headlines, subheadlines, buttons, images, forms)
-- [ ] Detect persuasion elements (urgency, scarcity, social proof, guarantees, trust badges)
-- [ ] Extract style information (colors, fonts, spacing)
-- [ ] Output structured component map (JSON)
+### Analyzer Agent ✅
+- [x] Extract page sections (hero, features, testimonials, CTA, footer)
+- [x] Identify components (headlines, subheadlines, buttons, images, forms)
+- [x] Detect persuasion elements (urgency, scarcity, social proof, guarantees, trust badges)
+- [x] Extract style information (colors, fonts, spacing)
+- [x] Output structured component map (JSON)
+- [x] API endpoint: `/api/analyze`
 
 ### Builder Agent
 - [ ] Rebuild page from component map
