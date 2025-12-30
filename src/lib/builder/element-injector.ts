@@ -8,6 +8,52 @@ interface InjectedElement {
 }
 
 /**
+ * Detect the main CTA/redirect URL from the page
+ */
+function detectRedirectUrl($: cheerio.CheerioAPI): string | null {
+  // Common CTA button selectors (prioritized)
+  const ctaSelectors = [
+    'a.btn[href], a.button[href]',
+    'a[class*="cta"][href]',
+    'a[class*="CTA"][href]',
+    'a[class*="buy"][href], a[class*="Buy"][href]',
+    'a[class*="order"][href], a[class*="Order"][href]',
+    'a[class*="signup"][href], a[class*="sign-up"][href]',
+    'a[class*="get-started"][href]',
+    '.hero a[href]:not([href^="#"])',
+    'section:first-of-type a[href]:not([href^="#"])',
+  ];
+
+  for (const selector of ctaSelectors) {
+    const $el = $(selector).first();
+    if ($el.length) {
+      const href = $el.attr('href');
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+        return href;
+      }
+    }
+  }
+
+  // Fallback: find any prominent link with tracking parameters
+  const trackingPatterns = ['?ref=', '?aff=', 'click', 'track', 'redirect', 'go', 'out'];
+  let fallbackUrl: string | null = null;
+
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+      for (const pattern of trackingPatterns) {
+        if (href.toLowerCase().includes(pattern)) {
+          fallbackUrl = href;
+          return false; // break
+        }
+      }
+    }
+  });
+
+  return fallbackUrl;
+}
+
+/**
  * Inject new elements into the page
  */
 export function injectElements(
@@ -15,6 +61,9 @@ export function injectElements(
   options: AddElementOptions
 ): InjectedElement[] {
   const injected: InjectedElement[] = [];
+
+  // Detect or use provided redirect URL
+  const redirectUrl = options.redirectUrl || detectRedirectUrl($);
 
   // Countdown timer
   if (options.countdown?.enabled) {
@@ -40,15 +89,15 @@ export function injectElements(
     if (element) injected.push(element);
   }
 
-  // Exit intent popup
+  // Exit intent popup - pass redirect URL
   if (options.exitIntent?.enabled) {
-    const element = injectExitIntent($, options.exitIntent);
+    const element = injectExitIntent($, options.exitIntent, redirectUrl);
     if (element) injected.push(element);
   }
 
-  // Sticky CTA bar
+  // Sticky CTA bar - pass redirect URL
   if (options.stickyCta?.enabled) {
-    const element = injectStickyCta($, options.stickyCta);
+    const element = injectStickyCta($, options.stickyCta, redirectUrl);
     if (element) injected.push(element);
   }
 
@@ -346,8 +395,34 @@ function injectTrustBadges(
  */
 function injectExitIntent(
   $: cheerio.CheerioAPI,
-  options: NonNullable<AddElementOptions['exitIntent']>
+  options: NonNullable<AddElementOptions['exitIntent']>,
+  redirectUrl: string | null
 ): InjectedElement | null {
+  // Use <a> tag if we have a redirect URL, otherwise use <button>
+  const ctaButton = redirectUrl
+    ? `<a href="${redirectUrl}" style="
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        text-decoration: none;
+        border: none;
+        padding: 15px 40px;
+        font-size: 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+      ">${options.buttonText}</a>`
+    : `<button onclick="document.getElementById('exit-intent-popup').style.display='none'" style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 15px 40px;
+        font-size: 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+      ">${options.buttonText}</button>`;
+
   const html = `
     <div id="exit-intent-popup" style="
       position: fixed;
@@ -381,16 +456,7 @@ function injectExitIntent(
         ">&times;</button>
         <h2 style="font-size: 28px; margin-bottom: 15px;">${options.headline}</h2>
         <p style="color: #666; margin-bottom: 25px;">${options.text}</p>
-        <button style="
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border: none;
-          padding: 15px 40px;
-          font-size: 18px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: bold;
-        ">${options.buttonText}</button>
+        ${ctaButton}
       </div>
     </div>
     <script>
@@ -416,9 +482,35 @@ function injectExitIntent(
  */
 function injectStickyCta(
   $: cheerio.CheerioAPI,
-  options: NonNullable<AddElementOptions['stickyCta']>
+  options: NonNullable<AddElementOptions['stickyCta']>,
+  redirectUrl: string | null
 ): InjectedElement | null {
   const position = options.position === 'top' ? 'top: 0;' : 'bottom: 0;';
+
+  // Use <a> tag if we have a redirect URL, otherwise use <button>
+  const ctaButton = redirectUrl
+    ? `<a href="${redirectUrl}" style="
+        display: inline-block;
+        background: #fbbf24;
+        color: #1e3a8a;
+        text-decoration: none;
+        border: none;
+        padding: 10px 25px;
+        font-size: 14px;
+        font-weight: bold;
+        border-radius: 6px;
+        cursor: pointer;
+      ">${options.buttonText}</a>`
+    : `<button style="
+        background: #fbbf24;
+        color: #1e3a8a;
+        border: none;
+        padding: 10px 25px;
+        font-size: 14px;
+        font-weight: bold;
+        border-radius: 6px;
+        cursor: pointer;
+      ">${options.buttonText}</button>`;
 
   const html = `
     <div id="sticky-cta" style="
@@ -437,16 +529,7 @@ function injectStickyCta(
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
     ">
       <span style="font-size: 16px;">${options.text}</span>
-      <button style="
-        background: #fbbf24;
-        color: #1e3a8a;
-        border: none;
-        padding: 10px 25px;
-        font-size: 14px;
-        font-weight: bold;
-        border-radius: 6px;
-        cursor: pointer;
-      ">${options.buttonText}</button>
+      ${ctaButton}
     </div>
     <style>
       body { padding-${options.position}: 60px; }

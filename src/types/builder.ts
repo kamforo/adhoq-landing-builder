@@ -53,6 +53,10 @@ export interface ComponentBuildOptions {
  * Options for adding new elements
  */
 export interface AddElementOptions {
+  // Global redirect URL for all clickable elements
+  // If not provided, will try to detect from existing CTA buttons
+  redirectUrl?: string;
+
   // Countdown timer
   countdown?: {
     enabled: boolean;

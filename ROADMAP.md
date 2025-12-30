@@ -31,6 +31,8 @@ Input Page(s) → Analyzer Agent → Component Map → Builder Agent → Output
   - [x] Trust badges (secure, guarantee, verified, payment)
   - [x] Exit intent popup
   - [x] Sticky CTA bar
+- [x] Auto-detect redirect/tracking URL from CTAs
+- [x] Apply same tracking URL to all injected clickable elements
 - [x] Text rewriting per component
 - [x] Style modifications (colors, layout)
 - [x] API endpoint: `/api/build`
