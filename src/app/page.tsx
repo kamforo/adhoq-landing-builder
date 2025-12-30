@@ -70,6 +70,20 @@ export default function Home() {
       const parsed = await response.json();
       setParsedPage(parsed);
 
+      // Auto-fill tracking link from detected links (priority: cta > affiliate > tracking > redirect)
+      if (parsed.links && parsed.links.length > 0) {
+        const ctaLink = parsed.links.find((l: DetectedLink) => l.type === 'cta' && l.originalUrl !== '#');
+        const affiliateLink = parsed.links.find((l: DetectedLink) => l.type === 'affiliate');
+        const trackingLink = parsed.links.find((l: DetectedLink) => l.type === 'tracking' && l.originalUrl.startsWith('http'));
+        const redirectLink = parsed.links.find((l: DetectedLink) => l.type === 'redirect');
+
+        const bestLink = ctaLink || affiliateLink || trackingLink || redirectLink;
+        if (bestLink && !options.ctaUrlOverride) {
+          setOptions(prev => ({ ...prev, ctaUrlOverride: bestLink.originalUrl }));
+          console.log('Auto-filled tracking link:', bestLink.type, bestLink.originalUrl);
+        }
+      }
+
       // Now analyze the page
       setProgress(60);
       const analyzeResponse = await fetch('/api/analyze', {

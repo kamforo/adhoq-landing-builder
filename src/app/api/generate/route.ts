@@ -56,9 +56,24 @@ export async function POST(request: NextRequest) {
       analysis.lpFlow.ctaStrategy.primaryCtaUrl = options.ctaUrlOverride.trim();
     }
 
-    // Validate CTA URL exists
+    // If no CTA URL found by analyzer, try to get it from parsed links
     if (!analysis.lpFlow.ctaStrategy.primaryCtaUrl || analysis.lpFlow.ctaStrategy.primaryCtaUrl === '#') {
-      console.warn('WARNING: No CTA URL detected or provided!');
+      console.log('Analyzer did not find CTA URL, checking parsed links...');
+
+      // Priority order: cta > affiliate > tracking > redirect
+      const ctaLink = sourcePage.links?.find(l => l.type === 'cta' && l.originalUrl !== '#');
+      const affiliateLink = sourcePage.links?.find(l => l.type === 'affiliate');
+      const trackingLink = sourcePage.links?.find(l => l.type === 'tracking' && l.originalUrl.startsWith('http'));
+      const redirectLink = sourcePage.links?.find(l => l.type === 'redirect');
+
+      const bestLink = ctaLink || affiliateLink || trackingLink || redirectLink;
+
+      if (bestLink) {
+        console.log('Found tracking link from parser:', bestLink.type, bestLink.originalUrl);
+        analysis.lpFlow.ctaStrategy.primaryCtaUrl = bestLink.originalUrl;
+      } else {
+        console.warn('WARNING: No CTA/tracking URL detected anywhere!');
+      }
     }
 
     // Check if we need to generate a completely new layout
