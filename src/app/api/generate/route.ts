@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateVariations } from '@/lib/generator';
-import type { ParsedLandingPage, GenerationOptions, DEFAULT_GENERATION_OPTIONS } from '@/types';
+import { analyzeLandingPage } from '@/lib/analyzer';
+import { buildLandingPage } from '@/lib/builder';
+import { generateNewLayout, generateFallbackLayout } from '@/lib/builder/layout-generator';
+import { getLLMProvider } from '@/lib/llm';
+import type { ParsedLandingPage, GenerationOptions } from '@/types';
+import type { BuildOptions, TextBuildOptions, StyleBuildOptions } from '@/types/builder';
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,48 +21,182 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Merge with default options
-    const fullOptions: GenerationOptions = {
-      textHandling: options.textHandling || 'keep',
-      imageHandling: options.imageHandling || 'keep',
-      linkHandling: options.linkHandling || 'keep',
-      styleHandling: options.styleHandling || 'keep',
-      variationCount: options.variationCount || 1,
-      variationStyle: options.variationStyle || 'moderate',
-      linkReplacements: options.linkReplacements || [],
-      removeTrackingCodes: options.removeTrackingCodes || false,
-      trackingCodeReplacements: options.trackingCodeReplacements || [],
-      outputFormat: options.outputFormat || 'zip',
-      llmProvider: options.llmProvider || 'grok',
-      creativity: options.creativity || 0.7,
-      textInstructions: options.textInstructions,
-      preserveKeywords: options.preserveKeywords,
-      outputDirectory: options.outputDirectory,
-    };
-
     // Validate variation count
-    if (fullOptions.variationCount < 1 || fullOptions.variationCount > 10) {
+    const variationCount = options.variationCount || 1;
+    if (variationCount < 1 || variationCount > 10) {
       return NextResponse.json(
         { error: 'Variation count must be between 1 and 10' },
         { status: 400 }
       );
     }
 
-    // Log the options for debugging
-    console.log('Generation options:', {
-      textHandling: fullOptions.textHandling,
-      styleHandling: fullOptions.styleHandling,
-      variationCount: fullOptions.variationCount,
-      creativity: fullOptions.creativity,
+    console.log('=== Using Analyzer + Builder Agents ===');
+    console.log('Options:', {
+      textHandling: options.textHandling,
+      styleHandling: options.styleHandling,
+      variationCount,
+      creativity: options.creativity,
+      addElements: options.addElements,
     });
 
-    // Generate variations
-    const results = await generateVariations(sourcePage, fullOptions);
+    // Step 1: Analyze the page using Analyzer Agent
+    console.log('Step 1: Analyzing page...');
+    const analysis = await analyzeLandingPage(sourcePage.html, sourcePage.sourceUrl);
+    console.log('Analysis complete:', {
+      sections: analysis.sections.length,
+      headlines: analysis.components.headlines.length,
+      buttons: analysis.components.buttons.length,
+      persuasionElements: analysis.persuasionElements.length,
+    });
+
+    // Check if we need to generate a completely new layout
+    if (options.styleHandling === 'generate-new') {
+      console.log('Step 2: Generating completely new layout...');
+      const llm = getLLMProvider('grok');
+
+      const buildOptions: BuildOptions = {
+        sourceAnalysis: analysis,
+        includeSections: 'all',
+        componentOptions: {
+          includeHeadlines: true,
+          includeImages: true,
+          includeForms: true,
+          includeButtons: true,
+          includeLists: true,
+          includeVideos: true,
+          imageHandling: 'keep',
+        },
+        addElements: options.addElements || {},
+        styleOptions: { colorScheme: 'keep', fontHandling: 'keep' },
+        textOptions: {
+          handling: 'keep',
+          creativity: options.creativity || 0.7,
+        },
+        variationCount,
+      };
+
+      // Generate new layouts
+      const variations = [];
+      for (let i = 0; i < variationCount; i++) {
+        try {
+          const html = await generateNewLayout(analysis, buildOptions, llm);
+          variations.push({
+            id: `new-layout-${Date.now()}-${i}`,
+            sourcePageId: sourcePage.id || 'unknown',
+            variationNumber: i + 1,
+            html,
+            assets: [],
+            changes: [{ type: 'structure', selector: 'html', originalValue: '', newValue: '', reason: 'Generated completely new layout' }],
+            generatedAt: new Date(),
+          });
+        } catch (error) {
+          console.error('Layout generation failed, using fallback:', error);
+          const html = generateFallbackLayout(analysis);
+          variations.push({
+            id: `fallback-${Date.now()}-${i}`,
+            sourcePageId: sourcePage.id || 'unknown',
+            variationNumber: i + 1,
+            html,
+            assets: [],
+            changes: [{ type: 'structure', selector: 'html', originalValue: '', newValue: '', reason: 'Generated fallback layout' }],
+            generatedAt: new Date(),
+          });
+        }
+      }
+
+      console.log('New layout generation complete:', { variations: variations.length });
+
+      return NextResponse.json({
+        success: true,
+        variations,
+        count: variations.length,
+        analysis: {
+          id: analysis.id,
+          sections: analysis.sections.length,
+          components: {
+            headlines: analysis.components.headlines.length,
+            buttons: analysis.components.buttons.length,
+            images: analysis.components.images.length,
+          },
+          persuasionElements: analysis.persuasionElements.length,
+        },
+      });
+    }
+
+    // Step 2: Map GenerationOptions to BuildOptions (for non-generate-new modes)
+    const textHandling = mapTextHandling(options.textHandling || 'keep');
+    const styleOptions = mapStyleHandling(options.styleHandling || 'keep');
+
+    const buildOptions: BuildOptions = {
+      sourceAnalysis: analysis,
+      includeSections: 'all',
+      componentOptions: {
+        includeHeadlines: true,
+        includeImages: true,
+        includeForms: true,
+        includeButtons: true,
+        includeLists: true,
+        includeVideos: true,
+        imageHandling: options.imageHandling === 'placeholder' ? 'placeholder' : 'keep',
+      },
+      addElements: options.addElements || {},
+      styleOptions,
+      textOptions: {
+        handling: textHandling,
+        instructions: options.textInstructions,
+        preserveKeywords: options.preserveKeywords,
+        creativity: options.creativity || 0.7,
+      },
+      variationCount,
+    };
+
+    // Step 3: Build the page using Builder Agent
+    console.log('Step 2: Building page with options:', {
+      textHandling: buildOptions.textOptions.handling,
+      styleOptions: buildOptions.styleOptions,
+      addElements: Object.keys(buildOptions.addElements).filter(k =>
+        (buildOptions.addElements as Record<string, { enabled?: boolean }>)[k]?.enabled
+      ),
+    });
+
+    const buildResults = await buildLandingPage(buildOptions);
+    console.log('Build complete:', {
+      variations: buildResults.length,
+      changes: buildResults[0]?.changes.length,
+      addedElements: buildResults[0]?.addedElements,
+    });
+
+    // Step 4: Convert BuildResult to GenerationResult format for compatibility
+    const variations = buildResults.map((result, index) => ({
+      id: result.id,
+      sourcePageId: sourcePage.id || 'unknown',
+      variationNumber: index + 1,
+      html: result.html,
+      assets: [],
+      changes: result.changes.map(c => ({
+        type: c.type,
+        selector: c.selector || '',
+        originalValue: c.before || '',
+        newValue: c.after || '',
+        reason: c.description,
+      })),
+      generatedAt: result.builtAt,
+    }));
 
     return NextResponse.json({
       success: true,
-      variations: results,
-      count: results.length,
+      variations,
+      count: variations.length,
+      analysis: {
+        id: analysis.id,
+        sections: analysis.sections.length,
+        components: {
+          headlines: analysis.components.headlines.length,
+          buttons: analysis.components.buttons.length,
+          images: analysis.components.images.length,
+        },
+        persuasionElements: analysis.persuasionElements.length,
+      },
     });
   } catch (error) {
     console.error('Generate error:', error);
@@ -66,5 +204,52 @@ export async function POST(request: NextRequest) {
       { error: error instanceof Error ? error.message : 'Failed to generate variations' },
       { status: 500 }
     );
+  }
+}
+
+// Map text handling option
+function mapTextHandling(handling: string): TextBuildOptions['handling'] {
+  switch (handling) {
+    case 'rewrite-slight':
+      return 'rewrite-slight';
+    case 'rewrite-complete':
+      return 'rewrite-complete';
+    default:
+      return 'keep';
+  }
+}
+
+// Map style handling option
+function mapStyleHandling(handling: string): StyleBuildOptions {
+  switch (handling) {
+    case 'modify-colors':
+      return {
+        colorScheme: 'generate-new',
+        fontHandling: 'keep',
+      };
+    case 'modify-layout':
+      return {
+        colorScheme: 'keep',
+        fontHandling: 'modern',
+        layoutAdjustments: {
+          addPadding: true,
+          centerContent: true,
+        },
+      };
+    case 'restyle-complete':
+      return {
+        colorScheme: 'generate-new',
+        fontHandling: 'modern',
+        layoutAdjustments: {
+          maxWidth: '1200px',
+          addPadding: true,
+          centerContent: true,
+        },
+      };
+    default:
+      return {
+        colorScheme: 'keep',
+        fontHandling: 'keep',
+      };
   }
 }

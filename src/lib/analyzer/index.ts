@@ -6,15 +6,17 @@ import type {
   ComponentMap,
   PersuasionElement,
   StyleInfo,
+  LPFlow,
 } from '@/types';
 import { detectSections } from './section-detector';
 import { extractComponents } from './component-extractor';
 import { detectPersuasionElements } from './persuasion-detector';
 import { extractStyleInfo } from './style-extractor';
+import { detectLPFlow } from './flow-detector';
 
 /**
  * Analyzer Agent - Deep analysis of landing pages
- * Extracts sections, components, persuasion elements, and styles
+ * Extracts sections, components, persuasion elements, styles, and LP flow
  */
 export async function analyzeLandingPage(
   html: string,
@@ -34,6 +36,9 @@ export async function analyzeLandingPage(
   // 4. Extract style information
   const styleInfo = extractStyleInfo($);
 
+  // 5. Detect LP Flow (funnel structure)
+  const lpFlow = detectLPFlow($, sections, components, persuasionElements);
+
   return {
     id: uuidv4(),
     sourceUrl,
@@ -42,6 +47,7 @@ export async function analyzeLandingPage(
     components,
     persuasionElements,
     styleInfo,
+    lpFlow,
     html,
   };
 }
@@ -50,3 +56,4 @@ export { detectSections } from './section-detector';
 export { extractComponents } from './component-extractor';
 export { detectPersuasionElements } from './persuasion-detector';
 export { extractStyleInfo } from './style-extractor';
+export { detectLPFlow } from './flow-detector';

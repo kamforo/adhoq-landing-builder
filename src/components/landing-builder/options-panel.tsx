@@ -116,10 +116,13 @@ export function OptionsPanel({ options, onChange }: OptionsPanelProps) {
               <SelectItem value="modify-colors">Modify Colors Only</SelectItem>
               <SelectItem value="modify-layout">Modify Layout & Fonts</SelectItem>
               <SelectItem value="restyle-complete">Complete Restyle</SelectItem>
+              <SelectItem value="generate-new">Generate New Layout</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            How AI should modify the visual appearance
+            {options.styleHandling === 'generate-new'
+              ? 'AI will create a completely new design based on the content'
+              : 'How AI should modify the visual appearance'}
           </p>
         </div>
 

@@ -1,6 +1,51 @@
 // Types for the Analyzer Agent
 
 /**
+ * LP Flow - The persuasion journey/funnel structure
+ * This captures the STRATEGY, not the visual design
+ */
+export interface LPFlow {
+  // Flow type detected
+  type: 'single-page' | 'multi-step' | 'long-form' | 'video-sales';
+
+  // Ordered stages of the funnel
+  stages: FlowStage[];
+
+  // Framework detected (if any)
+  framework?: 'AIDA' | 'PAS' | 'BAB' | 'custom';
+
+  // CTA strategy
+  ctaStrategy: {
+    primaryCta: string;
+    primaryCtaUrl?: string;
+    ctaFrequency: 'single' | 'repeated' | 'progressive';
+    ctaPositions: string[]; // section types where CTAs appear
+  };
+
+  // Key messaging flow
+  messagingFlow: {
+    hook?: string;        // Attention grabber
+    problem?: string;     // Pain point
+    agitation?: string;   // Making problem worse
+    solution?: string;    // The offer
+    benefits?: string[];  // Key benefits
+    proof?: string;       // Social proof summary
+    offer?: string;       // What they get
+    urgency?: string;     // Why act now
+    guarantee?: string;   // Risk reversal
+  };
+}
+
+export interface FlowStage {
+  order: number;
+  sectionId: string;
+  sectionType: SectionType;
+  purpose: 'attention' | 'interest' | 'desire' | 'action' | 'trust' | 'objection-handling';
+  hasCtaButton: boolean;
+  keyMessage?: string;
+}
+
+/**
  * Complete analysis of a landing page
  */
 export interface PageAnalysis {
@@ -19,6 +64,9 @@ export interface PageAnalysis {
 
   // Style information
   styleInfo: StyleInfo;
+
+  // LP Flow - the funnel/journey structure
+  lpFlow: LPFlow;
 
   // Raw HTML for builder
   html: string;

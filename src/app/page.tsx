@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { UploadZone, OptionsPanel, LinkEditor, ParsedSummary, Preview } from '@/components/landing-builder';
+import { UploadZone, OptionsPanel, LinkEditor, ParsedSummary, Preview, AnalysisResults } from '@/components/landing-builder';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { ParsedLandingPage, GenerationOptions, GenerationResult, DetectedLink } from '@/types';
+import type { PageAnalysis } from '@/types/analyzer';
 
 type Step = 'upload' | 'configure' | 'generate' | 'preview';
 
@@ -16,6 +17,9 @@ export default function Home() {
 
   // State for parsed page
   const [parsedPage, setParsedPage] = useState<ParsedLandingPage | null>(null);
+
+  // State for page analysis
+  const [analysis, setAnalysis] = useState<PageAnalysis | null>(null);
 
   // State for generation options
   const [options, setOptions] = useState<Partial<GenerationOptions>>({
@@ -56,7 +60,7 @@ export default function Home() {
         });
       }
 
-      setProgress(50);
+      setProgress(40);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -65,6 +69,22 @@ export default function Home() {
 
       const parsed = await response.json();
       setParsedPage(parsed);
+
+      // Now analyze the page
+      setProgress(60);
+      const analyzeResponse = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: parsed.html, url: parsed.sourceUrl }),
+      });
+
+      setProgress(80);
+
+      if (analyzeResponse.ok) {
+        const analysisData = await analyzeResponse.json();
+        setAnalysis(analysisData);
+      }
+
       setProgress(100);
       setStep('configure');
     } catch (err) {
@@ -166,6 +186,7 @@ export default function Home() {
   const handleReset = () => {
     setStep('upload');
     setParsedPage(null);
+    setAnalysis(null);
     setVariations([]);
     setError(null);
   };
@@ -221,6 +242,7 @@ export default function Home() {
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="space-y-6">
               <ParsedSummary page={parsedPage} />
+              {analysis && <AnalysisResults analysis={analysis} />}
               <LinkEditor
                 links={parsedPage.links}
                 onLinksChange={handleLinksChange}

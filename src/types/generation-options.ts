@@ -5,7 +5,7 @@ import type { AddElementOptions } from './builder';
 export type TextHandling = 'keep' | 'rewrite-slight' | 'rewrite-complete';
 export type ImageHandling = 'keep' | 'placeholder' | 'ai-generate';
 export type LinkHandling = 'keep' | 'replace-custom' | 'remove-tracking';
-export type StyleHandling = 'keep' | 'modify-colors' | 'modify-layout' | 'restyle-complete';
+export type StyleHandling = 'keep' | 'modify-colors' | 'modify-layout' | 'restyle-complete' | 'generate-new';
 export type OutputFormat = 'single-html' | 'full-folder' | 'zip';
 
 export interface GenerationOptions {
