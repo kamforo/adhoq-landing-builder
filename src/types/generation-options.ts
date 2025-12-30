@@ -34,6 +34,9 @@ export interface GenerationOptions {
   textInstructions?: string; // Custom instructions for AI text rewriting
   preserveKeywords?: string[]; // Keywords to keep unchanged
 
+  // CTA/Redirect URL override (if not detected or needs to be changed)
+  ctaUrlOverride?: string;
+
   // Add elements to page
   addElements?: AddElementOptions;
 

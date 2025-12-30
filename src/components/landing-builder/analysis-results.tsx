@@ -47,6 +47,20 @@ export function AnalysisResults({ analysis }: AnalysisResultsProps) {
                 {lpFlow.ctaStrategy.ctaFrequency}
               </Badge>
             </div>
+            {/* CTA URL - show warning if missing */}
+            <div className="flex items-start gap-2">
+              <span className="text-muted-foreground shrink-0">Redirect URL:</span>
+              {lpFlow.ctaStrategy.primaryCtaUrl ? (
+                <span className="font-mono text-green-600 dark:text-green-400 break-all text-xs">
+                  {lpFlow.ctaStrategy.primaryCtaUrl.slice(0, 60)}
+                  {lpFlow.ctaStrategy.primaryCtaUrl.length > 60 ? '...' : ''}
+                </span>
+              ) : (
+                <span className="text-red-500 font-medium">
+                  ⚠️ Not detected - Enter manually in options below
+                </span>
+              )}
+            </div>
             {/* For multi-step flows, show stages with messages */}
             {lpFlow.type === 'multi-step' ? (
               <div className="space-y-1 max-h-40 overflow-y-auto">

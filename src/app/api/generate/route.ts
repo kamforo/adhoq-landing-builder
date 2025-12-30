@@ -50,6 +50,17 @@ export async function POST(request: NextRequest) {
       persuasionElements: analysis.persuasionElements.length,
     });
 
+    // Apply CTA URL override if provided
+    if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+      console.log('Applying CTA URL override:', options.ctaUrlOverride);
+      analysis.lpFlow.ctaStrategy.primaryCtaUrl = options.ctaUrlOverride.trim();
+    }
+
+    // Validate CTA URL exists
+    if (!analysis.lpFlow.ctaStrategy.primaryCtaUrl || analysis.lpFlow.ctaStrategy.primaryCtaUrl === '#') {
+      console.warn('WARNING: No CTA URL detected or provided!');
+    }
+
     // Check if we need to generate a completely new layout
     if (options.styleHandling === 'generate-new') {
       // Determine vertical (auto-detect or use user selection)
@@ -62,6 +73,7 @@ export async function POST(request: NextRequest) {
       console.log('Step 2: Generating completely new layout...');
       console.log('Detected/Selected vertical:', vertical);
       console.log('LP Flow type:', analysis.lpFlow.type, 'with', analysis.lpFlow.stages.length, 'stages');
+      console.log('CTA URL:', analysis.lpFlow.ctaStrategy.primaryCtaUrl || 'NOT SET!');
 
       const llm = getLLMProvider('grok');
 

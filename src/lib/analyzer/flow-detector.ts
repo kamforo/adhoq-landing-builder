@@ -144,16 +144,59 @@ function detectJSMultiStepFlow($: cheerio.CheerioAPI): LPFlow | null {
       });
     }
 
-    // Detect CTA from HTML
+    // Detect CTA text from HTML
     const primaryCtaText =
       $('[id*="continue"], [class*="continue"], [onclick*="continue"]').first().text().trim() ||
       $('a, button').filter((_, el) => /continue|next|submit|yes/i.test($(el).text())).first().text().trim() ||
       'Continue';
 
-    const primaryCtaUrl = $('a[href]').filter((_, el) => {
-      const text = $(el).text().toLowerCase();
-      return /continue|next|submit|start/i.test(text);
-    }).first().attr('href');
+    // Detect CTA URL - check multiple sources
+    let primaryCtaUrl: string | undefined;
+
+    // 1. Look for redirect URL in JavaScript
+    const jsRedirectMatch = jsContent.match(/(?:window\.location\.href|location\.href|redirect(?:Url|URL)?)\s*=\s*["']([^"']+)["']/);
+    if (jsRedirectMatch && jsRedirectMatch[1] && jsRedirectMatch[1] !== '#') {
+      primaryCtaUrl = jsRedirectMatch[1];
+    }
+
+    // 2. Look for tracking/affiliate links in HTML
+    if (!primaryCtaUrl) {
+      const trackingLink = $('a[href*="click"], a[href*="track"], a[href*="go."], a[href*="redirect"], a[href*="?sub"], a[href*="?ref"], a[href*="?aff"]').first().attr('href');
+      if (trackingLink && trackingLink !== '#') {
+        primaryCtaUrl = trackingLink;
+      }
+    }
+
+    // 3. Look for CTA buttons with href
+    if (!primaryCtaUrl) {
+      const ctaLink = $('a[href]').filter((_, el) => {
+        const text = $(el).text().toLowerCase();
+        const href = $(el).attr('href') || '';
+        return /continue|next|submit|start|sign.?up|register|join/i.test(text) && href !== '#' && href !== '';
+      }).first().attr('href');
+      if (ctaLink) {
+        primaryCtaUrl = ctaLink;
+      }
+    }
+
+    // 4. Look for any external link (not #, not javascript:)
+    if (!primaryCtaUrl) {
+      const anyLink = $('a[href]').filter((_, el) => {
+        const href = $(el).attr('href') || '';
+        return href !== '#' && !href.startsWith('javascript:') && href.length > 1;
+      }).first().attr('href');
+      if (anyLink) {
+        primaryCtaUrl = anyLink;
+      }
+    }
+
+    // 5. Look for form action URLs
+    if (!primaryCtaUrl) {
+      const formAction = $('form[action]').first().attr('action');
+      if (formAction && formAction !== '#') {
+        primaryCtaUrl = formAction;
+      }
+    }
 
     return {
       type: 'multi-step',
