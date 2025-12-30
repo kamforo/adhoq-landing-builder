@@ -21,16 +21,19 @@ Input Page(s) → Analyzer Agent → Component Map → Builder Agent → Output
 - [x] Output structured component map (JSON)
 - [x] API endpoint: `/api/analyze`
 
-### Builder Agent
-- [ ] Rebuild page from component map
-- [ ] Toggle components on/off
-- [ ] Add new elements to pages:
-  - [ ] Countdown timers / time scarcity
-  - [ ] Social proof widgets
-  - [ ] Trust badges
-  - [ ] Guarantee sections
-- [ ] Text rewriting per component
-- [ ] Style modifications (colors, layout)
+### Builder Agent ✅
+- [x] Rebuild page from component map
+- [x] Toggle components on/off
+- [x] Add new elements to pages:
+  - [x] Countdown timers / time scarcity
+  - [x] Scarcity indicators (spots, stock, viewers)
+  - [x] Social proof (counter, notifications, reviews)
+  - [x] Trust badges (secure, guarantee, verified, payment)
+  - [x] Exit intent popup
+  - [x] Sticky CTA bar
+- [x] Text rewriting per component
+- [x] Style modifications (colors, layout)
+- [x] API endpoint: `/api/build`
 
 ### Additional V1 Features
 - [ ] Custom placeholder images upload
