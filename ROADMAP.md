@@ -45,11 +45,11 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → Output
 - [x] Inline rename, bulk select/delete/download
 - [x] Multi-language support (26 languages, 40 countries)
 
-### Builder UI Improvements
-- [ ] Quick Settings + Advanced Settings split
-- [ ] AnalysisPanel (show AI analyzer output)
-- [ ] PromptPreview (show prompt before generation)
-- [ ] Dynamic Add Elements text (auto-generate based on vertical)
+### Builder UI Improvements ✅
+- [x] Quick Settings + Advanced Settings split
+- [x] AnalysisPanel (show AI analyzer output)
+- [x] PromptPreview (show prompt before generation)
+- [x] Dynamic Add Elements text (auto-generate based on vertical)
 
 ### Scoring & Recommendations
 - [ ] Conversion score per section (weak/strong)
