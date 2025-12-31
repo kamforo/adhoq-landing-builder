@@ -8,7 +8,7 @@
 
 ### Core Architecture
 ```
-Input Page → Analyzer Agent → Prompt Writer → Builder Agent → Output
+Input Page → Analyzer Agent → Prompt Writer → Builder Agent → QA Agent → Repair Agent (if needed) → Output
 ```
 
 ### Analyzer Agent ✅
@@ -51,9 +51,16 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → Output
 - [x] PromptPreview (show prompt before generation)
 - [x] Dynamic Add Elements text (auto-generate based on vertical)
 
-### Debug & Fix
-- [ ] Detect broken/non-functional landing pages (JS errors, missing elements)
-- [ ] One-click "Fix Issues" button to auto-repair common problems
+### Debug & Fix (QA Agent)
+- [ ] **QA Agent** - Reviews and tests generated pages (separate LLM, e.g. OpenAI)
+  - [ ] Validate HTML structure and JS functionality
+  - [ ] Check all buttons/links work correctly
+  - [ ] Verify countdown timers, forms, and interactive elements
+  - [ ] Test mobile responsiveness
+- [ ] **Repair Agent** - Fixes issues found by QA or reported by user
+  - [ ] Describe issue in natural language → agent fixes it
+  - [ ] One-click "Fix Issues" for common problems
+  - [ ] Auto-retry with different approach if generation fails
 - [ ] Manual edit mode for quick fixes before download
 
 ### Scoring & Recommendations
