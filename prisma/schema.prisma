@@ -1,0 +1,338 @@
+// Prisma schema for Adhoq Landing Page Builder
+// V2: Projects, Variations, Templates
+// V3: Users, Teams (prepared)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// V3: USER MANAGEMENT (Prepared for later)
+// ============================================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          UserRole  @default(USER)
+
+  // Google OAuth fields
+  googleId      String?   @unique
+
+  // Relations
+  projects      Project[]
+  templates     Template[]
+  jobs          Job[]
+
+  // Team relations (for V3)
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+  ownedTeams    Team[]    @relation("TeamOwner")
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Team {
+  id            String    @id @default(cuid())
+  name          String
+
+  // Relations
+  ownerId       String
+  owner         User      @relation("TeamOwner", fields: [ownerId], references: [id])
+  members       User[]
+  projects      Project[]
+  templates     Template[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// ============================================
+// V2: PROJECT MANAGEMENT
+// ============================================
+
+enum ProjectStatus {
+  DRAFT
+  GENERATING
+  COMPLETED
+  FAILED
+  ARCHIVED
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  status        ProjectStatus @default(DRAFT)
+
+  // Source page data
+  sourceUrl     String?
+  sourceHtml    String?       @db.Text
+
+  // Generation options (stored as JSON)
+  options       Json?
+
+  // Analysis results (from AI Analyzer)
+  analysis      Json?
+
+  // Tracking URL
+  trackingUrl   String?
+
+  // Metadata
+  vertical      String?       // adult, casual, mainstream
+  language      String        @default("en")
+  country       String        @default("US")
+
+  // Relations
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id])
+  teamId        String?
+  team          Team?         @relation(fields: [teamId], references: [id])
+  variations    Variation[]
+  jobs          Job[]
+
+  // Folder/organization
+  folder        String?
+  tags          String[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([status])
+  @@index([folder])
+}
+
+model Variation {
+  id            String    @id @default(cuid())
+
+  // Variation number (1, 2, 3, etc.)
+  number        Int
+
+  // Generated HTML
+  html          String    @db.Text
+
+  // Generation metadata
+  generatedAt   DateTime  @default(now())
+  generationTime Int?     // ms
+
+  // A/B Testing fields (for V7)
+  isControl     Boolean   @default(false)
+  isWinner      Boolean   @default(false)
+
+  // Stats from tracker (V7)
+  clicks        Int       @default(0)
+  conversions   Int       @default(0)
+
+  // Relations
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Deployment info (V6)
+  deployedUrl   String?
+  deployedAt    DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([projectId, number])
+  @@index([projectId])
+}
+
+// ============================================
+// V2: TEMPLATES
+// ============================================
+
+model Template {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+
+  // Template content
+  html          String    @db.Text
+  thumbnail     String?   // URL to preview image
+
+  // Categorization
+  vertical      String?   // adult, casual, mainstream
+  category      String?   // quiz, long-form, single-page
+  tags          String[]
+
+  // Source info
+  sourceProjectId String?
+
+  // Sharing
+  isPublic      Boolean   @default(false)
+
+  // Relations
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+
+  // Stats
+  usageCount    Int       @default(0)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([vertical])
+  @@index([isPublic])
+}
+
+// ============================================
+// V2: BATCH PROCESSING / JOB QUEUE
+// ============================================
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  GENERATE_VARIATIONS
+  ANALYZE_PAGE
+  GENERATE_IMAGES
+  DEPLOY
+  BATCH_GENERATE
+}
+
+model Job {
+  id            String    @id @default(cuid())
+  type          JobType
+  status        JobStatus @default(PENDING)
+
+  // Job configuration
+  config        Json?
+
+  // Progress tracking
+  progress      Int       @default(0)  // 0-100
+  currentStep   String?
+  totalSteps    Int?
+
+  // Results
+  result        Json?
+  error         String?
+
+  // Timing
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  // Priority (higher = sooner)
+  priority      Int       @default(0)
+
+  // Relations
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id])
+  projectId     String?
+  project       Project?  @relation(fields: [projectId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([userId])
+  @@index([projectId])
+  @@index([priority, createdAt])
+}
+
+// ============================================
+// V4: IMAGE LIBRARY
+// ============================================
+
+enum ImageType {
+  HERO
+  PROFILE
+  BACKGROUND
+  BADGE
+  ICON
+  UPLOADED
+  AI_GENERATED
+}
+
+model Image {
+  id            String    @id @default(cuid())
+
+  // Image info
+  url           String
+  filename      String
+  type          ImageType
+
+  // Metadata
+  width         Int?
+  height        Int?
+  size          Int?      // bytes
+  mimeType      String?
+
+  // AI generation info
+  prompt        String?
+
+  // Categorization
+  vertical      String?
+  tags          String[]
+  description   String?
+
+  // Usage tracking
+  usageCount    Int       @default(0)
+  isFavorite    Boolean   @default(false)
+
+  // Relations
+  userId        String?
+  teamId        String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([type])
+  @@index([userId])
+  @@index([teamId])
+  @@index([vertical])
+}
+
+// ============================================
+// V7: TRACKER INTEGRATION
+// ============================================
+
+model TrackerConfig {
+  id            String    @id @default(cuid())
+
+  // Tracker type
+  type          String    // voluum, keitaro
+  name          String
+
+  // API credentials (encrypted)
+  apiKey        String?
+  apiSecret     String?
+  baseUrl       String?
+
+  // Additional config
+  config        Json?
+
+  // Status
+  isActive      Boolean   @default(true)
+  lastSyncAt    DateTime?
+
+  // Relations
+  userId        String?
+  teamId        String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}

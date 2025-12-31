@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   UploadZone,
   LinkEditor,
@@ -10,6 +10,7 @@ import {
   AdvancedSettings,
   AnalysisPanel,
   PromptPreview,
+  ProjectManager,
 } from '@/components/landing-builder';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -18,11 +19,34 @@ import type { ComponentAnalysis, BuilderPrompt } from '@/types/component-analysi
 
 type Step = 'upload' | 'configure' | 'generate' | 'preview';
 
+type Project = {
+  id: string;
+  name: string;
+  status: string;
+  sourceUrl?: string | null;
+  sourceHtml?: string | null;
+  trackingUrl?: string | null;
+  vertical?: string | null;
+  language: string;
+  country: string;
+  options?: Record<string, unknown> | null;
+  analysis?: Record<string, unknown> | null;
+  variations?: Array<{
+    id: string;
+    number: number;
+    html: string;
+  }>;
+};
+
 export default function Home() {
   const [step, setStep] = useState<Step>('upload');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+
+  // Project state
+  const [currentProjectId, setCurrentProjectId] = useState<string | undefined>();
+  const [projectName, setProjectName] = useState<string>('');
 
   // State for parsed page
   const [parsedPage, setParsedPage] = useState<ParsedLandingPage | null>(null);
@@ -51,6 +75,150 @@ export default function Home() {
 
   // State for generated variations
   const [variations, setVariations] = useState<GenerationResult[]>([]);
+
+  // Load a project by ID
+  const loadProject = useCallback(async (projectId: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      if (!response.ok) throw new Error('Failed to load project');
+
+      const project: Project = await response.json();
+      setCurrentProjectId(project.id);
+      setProjectName(project.name);
+
+      // Restore options from project
+      if (project.options) {
+        setOptions(prev => {
+          const restoredOptions: Partial<GenerationOptions> = {
+            ...prev,
+            ...(project.options as Partial<GenerationOptions>),
+            ctaUrlOverride: project.trackingUrl || prev.ctaUrlOverride,
+          };
+          if (project.vertical) {
+            restoredOptions.vertical = project.vertical as GenerationOptions['vertical'];
+          }
+          if (project.language) {
+            restoredOptions.language = project.language as GenerationOptions['language'];
+          }
+          if (project.country) {
+            restoredOptions.country = project.country as GenerationOptions['country'];
+          }
+          return restoredOptions;
+        });
+      }
+
+      // Restore analysis if available
+      if (project.analysis) {
+        setAnalysis(project.analysis as unknown as ComponentAnalysis);
+      }
+
+      // If project has variations, show preview
+      if (project.variations && project.variations.length > 0) {
+        const restoredVariations: GenerationResult[] = project.variations.map(v => ({
+          id: v.id,
+          sourcePageId: project.id,
+          variationNumber: v.number,
+          html: v.html,
+          assets: [],
+          changes: [],
+          generatedAt: new Date(),
+        }));
+        setVariations(restoredVariations);
+        setStep('preview');
+      } else if (project.sourceHtml) {
+        // If has source but no variations, go to configure
+        setParsedPage({
+          title: project.name,
+          html: project.sourceHtml,
+          sourceUrl: project.sourceUrl || undefined,
+        } as ParsedLandingPage);
+        setStep('configure');
+      } else {
+        // New/empty project, go to upload
+        setStep('upload');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load project');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Create a new project
+  const createProject = useCallback(async (name: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          language: options.language || 'en',
+          country: options.country || 'US',
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to create project');
+
+      const project = await response.json();
+      setCurrentProjectId(project.id);
+      setProjectName(project.name);
+      handleReset(); // Reset to upload step for new project
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [options.language, options.country]);
+
+  // Save current state to project
+  const saveProject = useCallback(async (projectId: string, variationsToSave?: GenerationResult[]) => {
+    try {
+      // Update project with current state
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceUrl: parsedPage?.sourceUrl,
+          sourceHtml: parsedPage?.html,
+          trackingUrl: options.ctaUrlOverride,
+          vertical: options.vertical,
+          language: options.language,
+          country: options.country,
+          options,
+          analysis,
+          status: variationsToSave && variationsToSave.length > 0 ? 'COMPLETED' : 'DRAFT',
+        }),
+      });
+
+      // Add variations if provided
+      if (variationsToSave && variationsToSave.length > 0) {
+        for (const variation of variationsToSave) {
+          await fetch(`/api/projects/${projectId}/variations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              number: variation.variationNumber,
+              html: variation.html,
+            }),
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save project:', err);
+    }
+  }, [parsedPage, options, analysis]);
+
+  // Handle project deletion
+  const handleProjectDelete = useCallback((projectId: string) => {
+    if (currentProjectId === projectId) {
+      handleReset();
+      setCurrentProjectId(undefined);
+      setProjectName('');
+    }
+  }, [currentProjectId]);
 
   // Handle parse from URL or file
   const handleParse = async (data: { type: 'url' | 'file'; value: string | File }) => {
@@ -156,6 +324,11 @@ export default function Home() {
         setBuilderPrompt(result.builderPrompt);
       }
 
+      // Auto-save to project if we have one
+      if (currentProjectId && result.variations) {
+        await saveProject(currentProjectId, result.variations);
+      }
+
       setProgress(100);
       setStep('preview');
     } catch (err) {
@@ -236,17 +409,32 @@ export default function Home() {
       <header className="border-b">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Adhoq Landing Page Builder</h1>
-              <p className="text-sm text-muted-foreground">
-                Generate landing page variations with AI
-              </p>
+            <div className="flex items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold">Adhoq Landing Page Builder</h1>
+                <p className="text-sm text-muted-foreground">
+                  Generate landing page variations with AI
+                </p>
+              </div>
+              <ProjectManager
+                currentProjectId={currentProjectId}
+                onProjectSelect={loadProject}
+                onProjectCreate={createProject}
+                onProjectDelete={handleProjectDelete}
+              />
             </div>
-            {step !== 'upload' && (
-              <Button variant="outline" onClick={handleReset}>
-                Start Over
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {currentProjectId && (
+                <span className="text-sm text-muted-foreground">
+                  {projectName}
+                </span>
+              )}
+              {step !== 'upload' && (
+                <Button variant="outline" onClick={handleReset}>
+                  Start Over
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>
