@@ -51,6 +51,11 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → Output
 - [x] PromptPreview (show prompt before generation)
 - [x] Dynamic Add Elements text (auto-generate based on vertical)
 
+### Debug & Fix
+- [ ] Detect broken/non-functional landing pages (JS errors, missing elements)
+- [ ] One-click "Fix Issues" button to auto-repair common problems
+- [ ] Manual edit mode for quick fixes before download
+
 ### Scoring & Recommendations
 - [ ] Conversion score per section (weak/strong)
 - [ ] AI recommendations ("Add social proof here", "Headline too long")
