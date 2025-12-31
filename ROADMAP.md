@@ -35,7 +35,7 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → QA Agent �
 
 ---
 
-## V2 - Production Scale (In Progress)
+## V2 - Production Scale ✅ COMPLETE
 
 ### Database & Admin ✅
 - [x] Supabase PostgreSQL integration
@@ -51,17 +51,53 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → QA Agent �
 - [x] PromptPreview (show prompt before generation)
 - [x] Dynamic Add Elements text (auto-generate based on vertical)
 
-### Debug & Fix (QA Agent)
-- [ ] **QA Agent** - Reviews and tests generated pages (separate LLM, e.g. OpenAI)
+---
+
+## V3 - Architect Flow (Next)
+
+### Dual Pipeline System
+- [ ] **Flow Selector** in admin - choose V1 (Classic) or V2 (Architect) pipeline
+- [ ] Both flows accessible independently, won't break existing workflow
+- [ ] Per-project flow selection
+
+### V1 Flow (Classic) - Current
+```
+Analyzer → Prompt Writer → Builder → Output
+```
+
+### V2 Flow (Architect) - New
+```
+Analyzer → Architect → Builder → QA Agent → Repair Agent (if needed) → Output
+```
+
+### Architect Agent (evolves from Prompt Writer)
+- [ ] Receives analyzer data + user preferences
+- [ ] **Plans LP structure** before writing prompt:
+  - [ ] Decide number of steps and flow type
+  - [ ] Choose which persuasion elements to include
+  - [ ] Plan component placement and hierarchy
+  - [ ] Select conversion strategy (curiosity, urgency, social proof mix)
+- [ ] **Writes detailed builder prompt** based on plan
+- [ ] Outputs both: architecture plan (for UI) + builder prompt
+
+### QA Agent
+- [ ] Reviews and tests generated pages (separate LLM, e.g. OpenAI)
   - [ ] Validate HTML structure and JS functionality
   - [ ] Check all buttons/links work correctly
   - [ ] Verify countdown timers, forms, and interactive elements
   - [ ] Test mobile responsiveness
-- [ ] **Repair Agent** - Fixes issues found by QA or reported by user
+- [ ] Returns pass/fail with specific issues
+
+### Repair Agent
+- [ ] Fixes issues found by QA or reported by user
   - [ ] Describe issue in natural language → agent fixes it
   - [ ] One-click "Fix Issues" for common problems
   - [ ] Auto-retry with different approach if generation fails
 - [ ] Manual edit mode for quick fixes before download
+
+---
+
+## V4 - Intelligence (Future)
 
 ### Scoring & Recommendations
 - [ ] Conversion score per section (weak/strong)
@@ -89,7 +125,7 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → QA Agent �
 
 ---
 
-## V3 - Scale & Monetize (Future)
+## V5 - Scale & Monetize (Future)
 
 ### Infrastructure
 - [ ] Deploy to DigitalOcean App Platform
