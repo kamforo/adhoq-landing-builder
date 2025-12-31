@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   UploadZone,
   LinkEditor,
@@ -41,6 +42,7 @@ type Project = {
 };
 
 export default function Home() {
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>('upload');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export default function Home() {
   // Project state
   const [currentProjectId, setCurrentProjectId] = useState<string | undefined>();
   const [projectName, setProjectName] = useState<string>('');
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // State for parsed page
   const [parsedPage, setParsedPage] = useState<ParsedLandingPage | null>(null);
@@ -147,6 +150,17 @@ export default function Home() {
       setIsLoading(false);
     }
   }, []);
+
+  // Load project from URL parameter on mount
+  useEffect(() => {
+    if (initialLoadDone) return;
+
+    const projectId = searchParams.get('project');
+    if (projectId) {
+      loadProject(projectId);
+    }
+    setInitialLoadDone(true);
+  }, [searchParams, loadProject, initialLoadDone]);
 
   // Create a new project
   const createProject = useCallback(async (name: string) => {

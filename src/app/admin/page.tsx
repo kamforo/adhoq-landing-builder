@@ -5,38 +5,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Plus,
   RefreshCw,
   Download,
   Eye,
   Trash2,
-  Upload,
   Loader2,
   Check,
   X,
   Pencil,
+  FolderOpen,
+  FileText,
+  Clock,
+  Settings,
 } from 'lucide-react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type Variation = {
   id: string;
@@ -78,14 +72,14 @@ function getRelativeTime(dateString: string): string {
 }
 
 export default function AdminDashboard() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  // New project form
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectUrl, setNewProjectUrl] = useState('');
-  const [isNewProjectDialogOpen, setIsNewProjectDialogOpen] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('all');
+  const [isCreating, setIsCreating] = useState(false);
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -94,6 +88,10 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Ref to track projects for polling without causing re-renders
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
 
   // Fetch all projects
   const fetchProjects = useCallback(async () => {
@@ -110,19 +108,19 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // Poll for updates on generating projects
+  // Initial fetch and polling
   useEffect(() => {
     fetchProjects();
 
     const interval = setInterval(() => {
-      const hasGenerating = projects.some(p => p.status === 'GENERATING');
+      const hasGenerating = projectsRef.current.some(p => p.status === 'GENERATING');
       if (hasGenerating) {
         fetchProjects();
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [fetchProjects, projects]);
+  }, [fetchProjects]);
 
   // Focus input when editing starts
   useEffect(() => {
@@ -132,7 +130,7 @@ export default function AdminDashboard() {
     }
   }, [editingId]);
 
-  // Create new project
+  // Create new project and go to builder
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
 
@@ -143,20 +141,16 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newProjectName.trim(),
-          sourceUrl: newProjectUrl.trim() || undefined,
         }),
       });
 
       if (response.ok) {
         const project = await response.json();
-        setProjects(prev => [project, ...prev]);
         setNewProjectName('');
-        setNewProjectUrl('');
-        setIsNewProjectDialogOpen(false);
+        router.push(`/?project=${project.id}`);
       }
     } catch (error) {
       console.error('Failed to create project:', error);
-    } finally {
       setIsCreating(false);
     }
   };
@@ -185,7 +179,7 @@ export default function AdminDashboard() {
   // Bulk delete
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedIds.size} project(s)?`)) return;
+    if (!confirm(`Delete ${selectedIds.size} project(s)?`)) return;
 
     const deletePromises = Array.from(selectedIds).map(id =>
       fetch(`/api/projects/${id}`, { method: 'DELETE' })
@@ -232,15 +226,16 @@ export default function AdminDashboard() {
 
   // Select all / deselect all
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredProjects.length) {
+    if (selectedIds.size === projects.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredProjects.map(p => p.id)));
+      setSelectedIds(new Set(projects.map(p => p.id)));
     }
   };
 
   // Start inline editing
-  const startEditing = (project: Project) => {
+  const startEditing = (project: Project, e: React.MouseEvent) => {
+    e.stopPropagation();
     setEditingId(project.id);
     setEditingName(project.name);
   };
@@ -279,17 +274,21 @@ export default function AdminDashboard() {
     setEditingName('');
   };
 
-  // Download variation
-  const handleDownload = (project: Project, variation: Variation) => {
-    const blob = new Blob([variation.html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${project.name}-v${variation.number}.html`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
-    a.remove();
+  // Download all variations for a project
+  const handleDownloadProject = (project: Project) => {
+    if (!project.variations || project.variations.length === 0) return;
+
+    project.variations.forEach(variation => {
+      const blob = new Blob([variation.html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project.name}-v${variation.number}.html`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      a.remove();
+    });
   };
 
   // Get status badge
@@ -313,24 +312,16 @@ export default function AdminDashboard() {
     }
   };
 
-  // Filter projects by tab
-  const filteredProjects = projects.filter(p => {
-    if (activeTab === 'all') return true;
-    if (activeTab === 'generating') return p.status === 'GENERATING';
-    if (activeTab === 'completed') return p.status === 'COMPLETED';
-    if (activeTab === 'draft') return p.status === 'DRAFT';
-    return true;
-  });
-
-  // Count by status
-  const statusCounts = {
-    all: projects.length,
-    generating: projects.filter(p => p.status === 'GENERATING').length,
+  // Stats
+  const stats = {
+    total: projects.length,
     completed: projects.filter(p => p.status === 'COMPLETED').length,
+    generating: projects.filter(p => p.status === 'GENERATING').length,
     draft: projects.filter(p => p.status === 'DRAFT').length,
+    totalVariations: projects.reduce((acc, p) => acc + (p.variations?.length || 0), 0),
   };
 
-  // Check if any selected projects have variations (for bulk download)
+  // Check if any selected projects have variations
   const canBulkDownload = Array.from(selectedIds).some(id => {
     const project = projects.find(p => p.id === id);
     return project?.variations && project.variations.length > 0;
@@ -339,356 +330,363 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b sticky top-0 bg-background z-10">
+      <header className="border-b">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-              <p className="text-sm text-muted-foreground">
-                Manage your landing page projects
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={fetchProjects}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
-              </Button>
-              <Dialog open={isNewProjectDialogOpen} onOpenChange={setIsNewProjectDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Project
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Project</DialogTitle>
-                    <DialogDescription>
-                      Start a new landing page project. You can upload a source page or start from scratch.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="name">Project Name</Label>
-                      <Input
-                        id="name"
-                        value={newProjectName}
-                        onChange={e => setNewProjectName(e.target.value)}
-                        placeholder="My Landing Page"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="url">Source URL (optional)</Label>
-                      <Input
-                        id="url"
-                        value={newProjectUrl}
-                        onChange={e => setNewProjectUrl(e.target.value)}
-                        placeholder="https://example.com/landing-page"
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsNewProjectDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleCreateProject} disabled={isCreating || !newProjectName.trim()}>
-                      {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Create Project
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-              <Link href="/">
-                <Button variant="ghost">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Builder
-                </Button>
-              </Link>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">Landing Page Builder</h1>
+          <p className="text-sm text-muted-foreground">
+            Create and manage your landing pages
+          </p>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        {/* Tabs and Bulk Actions */}
-        <div className="flex items-center justify-between mb-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="flex items-center justify-between mb-6">
             <TabsList>
-              <TabsTrigger value="all">
-                All ({statusCounts.all})
-              </TabsTrigger>
-              <TabsTrigger value="generating">
-                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                Generating ({statusCounts.generating})
-              </TabsTrigger>
-              <TabsTrigger value="completed">
-                Completed ({statusCounts.completed})
-              </TabsTrigger>
-              <TabsTrigger value="draft">
-                Drafts ({statusCounts.draft})
-              </TabsTrigger>
+              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+              <TabsTrigger value="new">New Project</TabsTrigger>
+              <TabsTrigger value="projects">Projects</TabsTrigger>
             </TabsList>
-          </Tabs>
 
-          {/* Bulk Actions Bar */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 bg-muted px-4 py-2 rounded-lg">
-              <span className="text-sm font-medium">{selectedIds.size} selected</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBulkDownload}
-                disabled={!canBulkDownload}
-              >
-                <Download className="h-4 w-4 mr-1" />
-                Download
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBulkDelete}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedIds(new Set())}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Select All */}
-        {filteredProjects.length > 0 && (
-          <div className="flex items-center gap-2 mb-4">
-            <Checkbox
-              checked={selectedIds.size === filteredProjects.length && filteredProjects.length > 0}
-              onCheckedChange={toggleSelectAll}
-            />
-            <span className="text-sm text-muted-foreground">
-              Select all ({filteredProjects.length})
-            </span>
-          </div>
-        )}
-
-        {/* Projects Grid */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : filteredProjects.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground mb-4">No projects found</p>
-            <Button onClick={() => setIsNewProjectDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Project
-            </Button>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredProjects.map(project => (
-              <Card
-                key={project.id}
-                className={`flex flex-col ${selectedIds.has(project.id) ? 'ring-2 ring-primary' : ''}`}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start gap-2">
-                    {/* Checkbox */}
-                    <Checkbox
-                      checked={selectedIds.has(project.id)}
-                      onCheckedChange={() => toggleSelection(project.id)}
-                      className="mt-1"
-                    />
-
-                    <div className="flex-1 min-w-0">
-                      {/* Inline Editing */}
-                      {editingId === project.id ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            ref={editInputRef}
-                            value={editingName}
-                            onChange={e => setEditingName(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') saveEdit();
-                              if (e.key === 'Escape') cancelEdit();
-                            }}
-                            className="h-7 text-lg font-semibold"
-                          />
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={saveEdit}>
-                            <Check className="h-4 w-4 text-green-600" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={cancelEdit}>
-                            <X className="h-4 w-4 text-red-600" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 group">
-                          <CardTitle
-                            className="text-lg truncate cursor-pointer hover:text-primary"
-                            onClick={() => startEditing(project)}
-                          >
-                            {project.name}
-                          </CardTitle>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => startEditing(project)}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* Timestamps */}
-                      <CardDescription className="text-xs">
-                        Updated {getRelativeTime(project.updatedAt)}
-                      </CardDescription>
-                    </div>
-
-                    {getStatusBadge(project.status)}
-                  </div>
-                </CardHeader>
-
-                <CardContent className="flex-1">
-                  {/* Project Details */}
-                  <div className="text-sm text-muted-foreground space-y-1 mb-4">
-                    {project.vertical && (
-                      <p>Vertical: <span className="text-foreground">{project.vertical}</span></p>
-                    )}
-                    <p>Language: <span className="text-foreground">{project.language.toUpperCase()}</span></p>
-                    {project.trackingUrl && (
-                      <p className="truncate">
-                        Tracking: <span className="text-foreground">{project.trackingUrl}</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Variations Preview */}
-                  {project.variations && project.variations.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">
-                        {project.variations.length} Variation(s)
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {project.variations.slice(0, 4).map(variation => (
-                          <div
-                            key={variation.id}
-                            className="relative aspect-[9/16] bg-muted rounded-md overflow-hidden border cursor-pointer group"
-                            onClick={() => setPreviewHtml(variation.html)}
-                          >
-                            <iframe
-                              srcDoc={variation.html}
-                              className="w-[300%] h-[300%] origin-top-left scale-[0.333] pointer-events-none"
-                              title={`Variation ${variation.number}`}
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                              <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                            <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded">
-                              V{variation.number}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-muted-foreground italic">
-                      No variations generated yet
-                    </div>
-                  )}
-                </CardContent>
-
-                <CardFooter className="flex gap-2 pt-4 border-t">
-                  {project.status === 'DRAFT' && (
-                    <Link href={`/?project=${project.id}`} className="flex-1">
-                      <Button variant="default" size="sm" className="w-full">
-                        <Upload className="h-4 w-4 mr-1" />
-                        Configure
-                      </Button>
-                    </Link>
-                  )}
-                  {project.status === 'COMPLETED' && project.variations?.length > 0 && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPreviewHtml(project.variations[0].html)}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDownload(project, project.variations[0])}
-                      >
-                        <Download className="h-4 w-4 mr-1" />
-                        Download
-                      </Button>
-                    </>
-                  )}
-                  {project.status === 'GENERATING' && (
-                    <Button variant="outline" size="sm" disabled className="flex-1">
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      Processing...
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteProject(project.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        )}
-      </main>
-
-      {/* Preview Modal */}
-      <Dialog open={!!previewHtml} onOpenChange={() => setPreviewHtml(null)}>
-        <DialogContent className="max-w-4xl h-[80vh]">
-          <DialogHeader>
-            <DialogTitle>Landing Page Preview</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden rounded-md border">
-            <iframe
-              srcDoc={previewHtml || ''}
-              className="w-full h-full"
-              title="Preview"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewHtml(null)}>
-              Close
-            </Button>
-            {previewHtml && (
-              <Button
-                onClick={() => {
-                  const blob = new Blob([previewHtml], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'landing-page.html';
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download HTML
+            {activeTab === 'projects' && (
+              <Button variant="outline" size="sm" onClick={fetchProjects}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
               </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+
+          {/* Dashboard Tab */}
+          <TabsContent value="dashboard">
+            <div className="grid md:grid-cols-4 gap-4 mb-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Projects
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-3xl font-bold">{stats.total}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Completed
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-5 w-5 text-green-500" />
+                    <span className="text-3xl font-bold">{stats.completed}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    In Progress
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-5 w-5 text-yellow-500 animate-spin" />
+                    <span className="text-3xl font-bold">{stats.generating}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Variations
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-3xl font-bold">{stats.totalVariations}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Projects */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Projects</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : projects.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>No projects yet</p>
+                    <Button
+                      variant="link"
+                      onClick={() => setActiveTab('new')}
+                      className="mt-2"
+                    >
+                      Create your first project
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {projects.slice(0, 5).map(project => (
+                      <div
+                        key={project.id}
+                        className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
+                        onClick={() => router.push(`/?project=${project.id}`)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">{project.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Updated {getRelativeTime(project.updatedAt)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {project.variations?.length > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {project.variations.length} variation(s)
+                            </span>
+                          )}
+                          {getStatusBadge(project.status)}
+                        </div>
+                      </div>
+                    ))}
+                    {projects.length > 5 && (
+                      <Button
+                        variant="ghost"
+                        className="w-full"
+                        onClick={() => setActiveTab('projects')}
+                      >
+                        View all {projects.length} projects
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* New Project Tab */}
+          <TabsContent value="new">
+            <Card className="max-w-md">
+              <CardHeader>
+                <CardTitle>Create New Project</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Project Name</label>
+                  <Input
+                    value={newProjectName}
+                    onChange={e => setNewProjectName(e.target.value)}
+                    placeholder="My Landing Page"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newProjectName.trim()) {
+                        handleCreateProject();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  onClick={handleCreateProject}
+                  disabled={isCreating || !newProjectName.trim()}
+                  className="w-full"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create & Configure
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Projects Tab */}
+          <TabsContent value="projects">
+            {/* Bulk Actions */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 mb-4 p-3 bg-muted rounded-lg">
+                <span className="text-sm font-medium">{selectedIds.size} selected</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkDownload}
+                  disabled={!canBulkDownload}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* Projects Table */}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground mb-4">No projects found</p>
+                <Button onClick={() => setActiveTab('new')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Your First Project
+                </Button>
+              </div>
+            ) : (
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedIds.size === projects.length && projects.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Variations</TableHead>
+                      <TableHead>Language</TableHead>
+                      <TableHead>Updated</TableHead>
+                      <TableHead className="w-32">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {projects.map(project => (
+                      <TableRow
+                        key={project.id}
+                        className={selectedIds.has(project.id) ? 'bg-muted/50' : ''}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(project.id)}
+                            onCheckedChange={() => toggleSelection(project.id)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {editingId === project.id ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                ref={editInputRef}
+                                value={editingName}
+                                onChange={e => setEditingName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') saveEdit();
+                                  if (e.key === 'Escape') cancelEdit();
+                                }}
+                                className="h-8 w-48"
+                              />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={saveEdit}>
+                                <Check className="h-4 w-4 text-green-600" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={cancelEdit}>
+                                <X className="h-4 w-4 text-red-600" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 group">
+                              <span
+                                className="font-medium cursor-pointer hover:text-primary"
+                                onClick={() => router.push(`/?project=${project.id}`)}
+                              >
+                                {project.name}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                                onClick={(e) => startEditing(project, e)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(project.status)}</TableCell>
+                        <TableCell>{project.variations?.length || 0}</TableCell>
+                        <TableCell>{project.language.toUpperCase()}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {getRelativeTime(project.updatedAt)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {project.status === 'DRAFT' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => router.push(`/?project=${project.id}`)}
+                                title="Configure"
+                              >
+                                <Settings className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {project.variations && project.variations.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleDownloadProject(project)}
+                                title="Download"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => handleDeleteProject(project.id)}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 }
