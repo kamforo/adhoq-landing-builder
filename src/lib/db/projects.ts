@@ -90,6 +90,10 @@ export async function listProjects(options: {
     prisma.project.findMany({
       where,
       include: {
+        variations: {
+          orderBy: { number: 'asc' },
+          take: 4, // Limit for thumbnail previews
+        },
         _count: {
           select: { variations: true },
         },

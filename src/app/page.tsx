@@ -14,6 +14,8 @@ import {
 } from '@/components/landing-builder';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import Link from 'next/link';
+import { LayoutDashboard } from 'lucide-react';
 import type { ParsedLandingPage, GenerationOptions, GenerationResult, DetectedLink } from '@/types';
 import type { ComponentAnalysis, BuilderPrompt } from '@/types/component-analysis';
 
@@ -434,6 +436,12 @@ export default function Home() {
                   Start Over
                 </Button>
               )}
+              <Link href="/admin">
+                <Button variant="ghost">
+                  <LayoutDashboard className="h-4 w-4 mr-2" />
+                  Dashboard
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
