@@ -1,6 +1,37 @@
 // Types for AI-powered component analysis
 
 /**
+ * LP Section Types - the main structural sections of a landing page
+ */
+export type LPSectionType = 'hook' | 'quiz' | 'cta' | 'testimonial' | 'benefits' | 'unknown';
+
+/**
+ * Detected section in the LP
+ */
+export interface DetectedSection {
+  type: LPSectionType;
+  stepNumbers: number[];     // Which steps belong to this section (e.g., [1] for hook, [2,3,4] for quiz)
+  description: string;       // Brief description of what this section does
+  components: string[];      // Component IDs in this section
+}
+
+/**
+ * Image types detected in the LP
+ */
+export type ImageType = 'hero' | 'background' | 'decorative' | 'icon' | 'badge' | 'profile' | 'unknown';
+
+/**
+ * Detected image with categorization
+ */
+export interface DetectedImage {
+  url: string;
+  type: ImageType;
+  description: string;       // What the image shows (e.g., "Woman in casual outfit")
+  position: 'hook' | 'quiz' | 'cta' | 'background' | 'floating';
+  isRequired: boolean;       // Whether this image is critical to the LP's effectiveness
+}
+
+/**
  * Component importance levels
  */
 export type ComponentImportance = 'critical' | 'important' | 'optional';
@@ -110,6 +141,9 @@ export interface ComponentAnalysis {
   // Core component breakdown
   components: AnalyzedComponent[];
 
+  // Detected sections (Hook, Quiz, CTA, etc.)
+  sections: DetectedSection[];
+
   // Flow information
   flow: {
     type: 'multi-step' | 'single-page' | 'long-form';
@@ -124,7 +158,10 @@ export interface ComponentAnalysis {
   // Critical URLs
   trackingUrl: string;
 
-  // Images from original (for reuse)
+  // Images with categorization (hero, background, decorative)
+  images: DetectedImage[];
+
+  // Legacy: simple image URLs (for backward compatibility)
   originalImages: string[];
 
   // Overall strategy summary

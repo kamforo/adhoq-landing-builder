@@ -3,6 +3,7 @@ export * from './generation-options';
 export * from './llm';
 export * from './analyzer';
 export * from './builder';
+export * from './languages';
 
 // Re-export from component-analysis, excluding DatingVertical to avoid conflict
 // generation-options.ts has DatingVertical = 'auto' | 'adult' | 'casual' | 'mainstream' (with auto)

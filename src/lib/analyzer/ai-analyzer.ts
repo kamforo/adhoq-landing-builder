@@ -9,6 +9,10 @@ import type {
   ComponentRole,
   ComponentImportance,
   PersuasionTechnique,
+  DetectedSection,
+  DetectedImage,
+  LPSectionType,
+  ImageType,
 } from '@/types/component-analysis';
 
 /**
@@ -31,15 +35,20 @@ export async function analyzeWithAI(
   const llm = getLLMProvider('grok');
   const aiAnalysis = await getAIAnalysis(llm, rawData, html);
 
+  // Step 4: Categorize images
+  const categorizedImages = categorizeImages(rawData.images, rawData.backgroundImages, aiAnalysis.flow.totalSteps);
+
   return {
     id: uuidv4(),
     sourceUrl,
     analyzedAt: new Date(),
     components: aiAnalysis.components,
+    sections: aiAnalysis.sections,
     flow: aiAnalysis.flow,
     vertical: aiAnalysis.vertical,
     tone: aiAnalysis.tone,
     trackingUrl,
+    images: categorizedImages,
     originalImages: rawData.images,
     strategySummary: aiAnalysis.strategySummary,
     rawCheerioData: {
@@ -84,8 +93,10 @@ function extractRawData($: cheerio.CheerioAPI) {
     }
   });
 
-  // Images
+  // Images (separate regular images from background images)
   const images: string[] = [];
+  const backgroundImages: string[] = [];
+
   $('img').each((_, el) => {
     const src = $(el).attr('src') || $(el).attr('data-src');
     if (src && !src.includes('data:image') && !src.includes('pixel') && !src.includes('tracking')) {
@@ -93,12 +104,23 @@ function extractRawData($: cheerio.CheerioAPI) {
     }
   });
 
-  // Background images
+  // Background images (tracked separately)
   $('[style*="background"]').each((_, el) => {
     const style = $(el).attr('style') || '';
     const match = style.match(/url\(['"]?([^'")\s]+)['"]?\)/);
     if (match && match[1]) {
-      images.push(match[1]);
+      backgroundImages.push(match[1]);
+    }
+  });
+
+  // Also check CSS for background images
+  $('style').each((_, el) => {
+    const css = $(el).text();
+    const matches = css.matchAll(/url\(['"]?([^'")\s]+)['"]?\)/g);
+    for (const match of matches) {
+      if (match[1] && !match[1].includes('data:image')) {
+        backgroundImages.push(match[1]);
+      }
     }
   });
 
@@ -146,6 +168,7 @@ function extractRawData($: cheerio.CheerioAPI) {
     headlines,
     buttons,
     images,
+    backgroundImages,
     forms,
     paragraphs,
     lists,
@@ -209,6 +232,7 @@ async function getAIAnalysis(
   html: string
 ): Promise<{
   components: AnalyzedComponent[];
+  sections: DetectedSection[];
   flow: ComponentAnalysis['flow'];
   vertical: DatingVertical;
   tone: LPTone;
@@ -256,6 +280,13 @@ Return a JSON object with this exact structure:
       "notes": "Why this component works and its purpose"
     }
   ],
+  "sections": [
+    {
+      "type": "hook|quiz|cta|testimonial|benefits",
+      "stepNumbers": [1],
+      "description": "What this section does"
+    }
+  ],
   "flow": {
     "type": "multi-step|single-page|long-form",
     "totalSteps": 5,
@@ -270,6 +301,14 @@ Return a JSON object with this exact structure:
     "keyPersuasionTactics": ["list", "of", "tactics"]
   }
 }
+
+## SECTION DETECTION:
+Identify distinct sections in the LP:
+- **hook**: The opening section (usually step 1) with headline, hero image, initial hook
+- **quiz**: Question/answer sections where users make selections
+- **cta**: Final conversion section with the main call-to-action
+- **testimonial**: Social proof sections with reviews/testimonials
+- **benefits**: Feature/benefit listing sections
 
 ## VERTICAL DETECTION RULES:
 - **adult**: Explicit language, suggestive content, words like "hookup", "NSA", "discreet", "affair", "milf", "cougar"
@@ -306,12 +345,15 @@ Return ONLY valid JSON, no explanation.`;
 
     const parsed = JSON.parse(jsonMatch[0]);
 
+    const totalSteps = parsed.flow?.totalSteps || rawData.headlines.length || 5;
+
     // Validate and clean up the response
     return {
       components: validateComponents(parsed.components || []),
+      sections: validateSections(parsed.sections, totalSteps, rawData.isMultiStep),
       flow: {
         type: parsed.flow?.type || (rawData.isMultiStep ? 'multi-step' : 'single-page'),
-        totalSteps: parsed.flow?.totalSteps || rawData.headlines.length,
+        totalSteps,
         hasProgressIndicator: parsed.flow?.hasProgressIndicator ?? rawData.isMultiStep,
       },
       vertical: validateVertical(parsed.vertical),
@@ -381,11 +423,45 @@ function validateTone(tone: unknown): LPTone {
   return valid.includes(tone as LPTone) ? (tone as LPTone) : 'playful-seductive';
 }
 
+function validateSections(sections: unknown, totalSteps: number, isMultiStep: boolean): DetectedSection[] {
+  // If AI provided valid sections, use them
+  if (Array.isArray(sections) && sections.length > 0) {
+    return sections.map(s => {
+      const section = s as Record<string, unknown>;
+      const validTypes: LPSectionType[] = ['hook', 'quiz', 'cta', 'testimonial', 'benefits', 'unknown'];
+      const type = validTypes.includes(section.type as LPSectionType)
+        ? (section.type as LPSectionType)
+        : 'unknown';
+
+      return {
+        type,
+        stepNumbers: Array.isArray(section.stepNumbers) ? section.stepNumbers as number[] : [1],
+        description: String(section.description || ''),
+        components: Array.isArray(section.components) ? section.components as string[] : [],
+      };
+    });
+  }
+
+  // Generate default sections
+  if (!isMultiStep) {
+    return [{ type: 'hook', stepNumbers: [1], description: 'Single page', components: [] }];
+  }
+
+  // Default multi-step structure: Hook (1), Quiz (2 to N-1), CTA (N)
+  const quizSteps = Array.from({ length: Math.max(totalSteps - 2, 1) }, (_, i) => i + 2);
+  return [
+    { type: 'hook', stepNumbers: [1], description: 'Opening hook with headline', components: [] },
+    { type: 'quiz', stepNumbers: quizSteps, description: 'Quiz/qualification questions', components: [] },
+    { type: 'cta', stepNumbers: [totalSteps], description: 'Final call-to-action', components: [] },
+  ];
+}
+
 /**
  * Fallback analysis if AI fails
  */
 function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
   components: AnalyzedComponent[];
+  sections: DetectedSection[];
   flow: ComponentAnalysis['flow'];
   vertical: DatingVertical;
   tone: LPTone;
@@ -431,11 +507,22 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
     vertical = 'mainstream';
   }
 
+  // Generate default sections based on step count
+  const totalSteps = rawData.isMultiStep ? Math.max(rawData.headlines.length, 3) : 1;
+  const sections: DetectedSection[] = rawData.isMultiStep ? [
+    { type: 'hook', stepNumbers: [1], description: 'Initial hook with headline', components: [] },
+    { type: 'quiz', stepNumbers: Array.from({ length: totalSteps - 2 }, (_, i) => i + 2), description: 'Quiz questions', components: [] },
+    { type: 'cta', stepNumbers: [totalSteps], description: 'Final CTA', components: [] },
+  ] : [
+    { type: 'hook', stepNumbers: [1], description: 'Single page with hook and CTA', components: [] },
+  ];
+
   return {
     components,
+    sections,
     flow: {
       type: rawData.isMultiStep ? 'multi-step' : 'single-page',
-      totalSteps: rawData.isMultiStep ? rawData.headlines.length : 1,
+      totalSteps,
       hasProgressIndicator: rawData.isMultiStep,
     },
     vertical,
@@ -447,4 +534,75 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
       keyPersuasionTactics: ['curiosity', 'locality'],
     },
   };
+}
+
+/**
+ * Categorize images as hero, background, or decorative
+ */
+function categorizeImages(
+  images: string[],
+  backgroundImages: string[],
+  totalSteps: number
+): DetectedImage[] {
+  const result: DetectedImage[] = [];
+
+  // Background images are always categorized as background
+  backgroundImages.forEach(url => {
+    result.push({
+      url,
+      type: 'background',
+      description: 'Background/decorative image',
+      position: 'background',
+      isRequired: false,
+    });
+  });
+
+  // Categorize regular images
+  images.forEach((url, index) => {
+    const lowerUrl = url.toLowerCase();
+
+    // Detect image type based on URL patterns
+    let type: ImageType = 'unknown';
+    let position: DetectedImage['position'] = 'hook';
+    let isRequired = false;
+    let description = 'Image';
+
+    // Check for common patterns
+    if (/model|woman|girl|man|person|profile|avatar|photo/i.test(lowerUrl)) {
+      type = 'hero';
+      position = 'hook';
+      isRequired = true;
+      description = 'Hero/model image';
+    } else if (/icon|badge|check|star|verified|trust|secure/i.test(lowerUrl)) {
+      type = 'badge';
+      position = 'cta';
+      isRequired = false;
+      description = 'Trust badge or icon';
+    } else if (/leaf|snow|pattern|bg|background|decor/i.test(lowerUrl)) {
+      type = 'decorative';
+      position = 'background';
+      isRequired = false;
+      description = 'Decorative element';
+    } else if (/logo/i.test(lowerUrl)) {
+      type = 'icon';
+      position = 'hook';
+      isRequired = false;
+      description = 'Logo';
+    } else if (index === 0 && images.length > 0) {
+      // First image is often the hero
+      type = 'hero';
+      position = 'hook';
+      isRequired = true;
+      description = 'Primary image (likely hero)';
+    } else {
+      type = 'decorative';
+      position = 'floating';
+      isRequired = false;
+      description = 'Supporting image';
+    }
+
+    result.push({ url, type, description, position, isRequired });
+  });
+
+  return result;
 }

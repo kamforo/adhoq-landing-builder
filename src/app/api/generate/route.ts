@@ -110,7 +110,24 @@ async function handleNewAgentWorkflow(
 
   // ===== STEP 2: PROMPT WRITER =====
   console.log('\n✍️ Step 2: Prompt Writer...');
-  const builderPrompt = await writeBuilderPrompt(analysis);
+
+  // Pass styling options to the prompt writer
+  const stylingOptions = {
+    colorScheme: options.colorScheme,
+    customColors: options.customColors,
+    layoutStyle: options.layoutStyle,
+    linkHandling: options.linkHandling,
+    textHandling: options.textHandling,
+    tone: options.tone,
+    targetAge: options.targetAge,
+    language: options.language,
+    country: options.country,
+    creativity: options.creativity,
+    customInstructions: options.textInstructions,
+    addElements: options.addElements,
+  };
+
+  const builderPrompt = await writeBuilderPrompt(analysis, stylingOptions);
   console.log('Prompt written:', {
     hasSystemContext: !!builderPrompt.systemContext,
     hasRequirements: !!builderPrompt.requirements,
@@ -148,20 +165,10 @@ async function handleNewAgentWorkflow(
     variations,
     count: variations.length,
     workflow: '3-agent',
-    analysis: {
-      id: analysis.id,
-      components: analysis.components.length,
-      criticalComponents: analysis.components.filter(c => c.importance === 'critical').length,
-      flow: analysis.flow,
-      vertical: analysis.vertical,
-      tone: analysis.tone,
-      strategySummary: analysis.strategySummary,
-      trackingUrl: analysis.trackingUrl,
-    },
-    prompt: {
-      length: builderPrompt.fullPrompt.length,
-      preview: builderPrompt.systemContext?.slice(0, 200) + '...',
-    },
+    // Full analysis for AnalysisPanel
+    analysis,
+    // Full prompt for PromptPreview
+    builderPrompt,
   });
 }
 

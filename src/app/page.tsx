@@ -1,11 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { UploadZone, OptionsPanel, LinkEditor, ParsedSummary, Preview, AnalysisResults } from '@/components/landing-builder';
+import {
+  UploadZone,
+  LinkEditor,
+  ParsedSummary,
+  Preview,
+  QuickSettings,
+  AdvancedSettings,
+  AnalysisPanel,
+  PromptPreview,
+} from '@/components/landing-builder';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { ParsedLandingPage, GenerationOptions, GenerationResult, DetectedLink } from '@/types';
-import type { PageAnalysis } from '@/types/analyzer';
+import type { ComponentAnalysis, BuilderPrompt } from '@/types/component-analysis';
 
 type Step = 'upload' | 'configure' | 'generate' | 'preview';
 
@@ -18,19 +27,26 @@ export default function Home() {
   // State for parsed page
   const [parsedPage, setParsedPage] = useState<ParsedLandingPage | null>(null);
 
-  // State for page analysis
-  const [analysis, setAnalysis] = useState<PageAnalysis | null>(null);
+  // State for page analysis (from 3-agent workflow)
+  const [analysis, setAnalysis] = useState<ComponentAnalysis | null>(null);
 
-  // State for generation options
+  // State for builder prompt (from 3-agent workflow)
+  const [builderPrompt, setBuilderPrompt] = useState<BuilderPrompt | null>(null);
+
+  // State for generation options - Default to 3-agent workflow
   const [options, setOptions] = useState<Partial<GenerationOptions>>({
-    textHandling: 'rewrite-slight',  // Default to rewriting text
+    textHandling: 'rewrite-slight',
     imageHandling: 'keep',
-    linkHandling: 'keep',
-    styleHandling: 'keep',  // Default to keeping original styles
+    linkHandling: 'replace-all',
+    styleHandling: 'generate-new',  // Default to 3-agent workflow
+    colorScheme: 'generate-matching',
+    layoutStyle: 'mobile-optimized',
+    tone: 'auto',
+    targetAge: 'all',
+    language: 'en',
+    country: 'US',
     variationCount: 1,
-    variationStyle: 'moderate',
     creativity: 0.7,
-    removeTrackingCodes: false,
   });
 
   // State for generated variations
@@ -60,7 +76,7 @@ export default function Home() {
         });
       }
 
-      setProgress(40);
+      setProgress(50);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -82,21 +98,6 @@ export default function Home() {
           setOptions(prev => ({ ...prev, ctaUrlOverride: bestLink.originalUrl }));
           console.log('Auto-filled tracking link:', bestLink.type, bestLink.originalUrl);
         }
-      }
-
-      // Now analyze the page
-      setProgress(60);
-      const analyzeResponse = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: parsed.html, url: parsed.sourceUrl }),
-      });
-
-      setProgress(80);
-
-      if (analyzeResponse.ok) {
-        const analysisData = await analyzeResponse.json();
-        setAnalysis(analysisData);
       }
 
       setProgress(100);
@@ -146,6 +147,15 @@ export default function Home() {
 
       const result = await response.json();
       setVariations(result.variations);
+
+      // Store analysis and prompt from 3-agent workflow
+      if (result.analysis) {
+        setAnalysis(result.analysis);
+      }
+      if (result.builderPrompt) {
+        setBuilderPrompt(result.builderPrompt);
+      }
+
       setProgress(100);
       setStep('preview');
     } catch (err) {
@@ -201,8 +211,23 @@ export default function Home() {
     setStep('upload');
     setParsedPage(null);
     setAnalysis(null);
+    setBuilderPrompt(null);
     setVariations([]);
     setError(null);
+    setOptions({
+      textHandling: 'rewrite-slight',
+      imageHandling: 'keep',
+      linkHandling: 'replace-all',
+      styleHandling: 'generate-new',
+      colorScheme: 'generate-matching',
+      layoutStyle: 'mobile-optimized',
+      tone: 'auto',
+      targetAge: 'all',
+      language: 'en',
+      country: 'US',
+      variationCount: 1,
+      creativity: 0.7,
+    });
   };
 
   return (
@@ -254,24 +279,40 @@ export default function Home() {
         {/* Step 2: Configure */}
         {step === 'configure' && parsedPage && (
           <div className="grid lg:grid-cols-2 gap-6">
-            <div className="space-y-6">
+            {/* Left Column - Settings */}
+            <div className="space-y-4">
+              <QuickSettings
+                options={options}
+                onChange={setOptions}
+                detectedTrackingUrl={parsedPage.links?.find(l => l.type === 'tracking' || l.type === 'cta')?.originalUrl}
+              />
+              <AdvancedSettings
+                options={options}
+                onChange={setOptions}
+                vertical={options.vertical}
+              />
+              <Button
+                onClick={handleGenerate}
+                disabled={isLoading || !options.ctaUrlOverride}
+                className="w-full"
+                size="lg"
+              >
+                {isLoading ? 'Generating...' : 'Generate Landing Page'}
+              </Button>
+              {!options.ctaUrlOverride && (
+                <p className="text-sm text-amber-600 text-center">
+                  Please enter a tracking URL to continue
+                </p>
+              )}
+            </div>
+
+            {/* Right Column - Insights */}
+            <div className="space-y-4">
               <ParsedSummary page={parsedPage} />
-              {analysis && <AnalysisResults analysis={analysis} />}
               <LinkEditor
                 links={parsedPage.links}
                 onLinksChange={handleLinksChange}
               />
-            </div>
-            <div className="space-y-6">
-              <OptionsPanel options={options} onChange={setOptions} />
-              <Button
-                onClick={handleGenerate}
-                disabled={isLoading}
-                className="w-full"
-                size="lg"
-              >
-                {isLoading ? 'Generating...' : 'Generate Variations'}
-              </Button>
             </div>
           </div>
         )}
@@ -290,11 +331,21 @@ export default function Home() {
 
         {/* Step 4: Preview */}
         {step === 'preview' && variations.length > 0 && (
-          <Preview
-            variations={variations}
-            onDownload={handleDownload}
-            isDownloading={isLoading}
-          />
+          <div className="space-y-6">
+            <Preview
+              variations={variations}
+              onDownload={handleDownload}
+              isDownloading={isLoading}
+            />
+
+            {/* Show analysis and prompt from 3-agent workflow */}
+            {(analysis || builderPrompt) && (
+              <div className="grid lg:grid-cols-2 gap-4">
+                {analysis && <AnalysisPanel analysis={analysis} />}
+                {builderPrompt && <PromptPreview prompt={builderPrompt} />}
+              </div>
+            )}
+          </div>
         )}
       </main>
 

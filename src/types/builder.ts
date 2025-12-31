@@ -71,6 +71,7 @@ export interface AddElementOptions {
     enabled: boolean;
     type: 'spots' | 'stock' | 'viewers';
     value?: number; // e.g., 5 spots left
+    text?: string;  // e.g., "Only 3 spots left in your area"
     position: 'top' | 'above-cta' | 'below-headline';
   };
 
@@ -79,6 +80,7 @@ export interface AddElementOptions {
     enabled: boolean;
     type: 'counter' | 'notification' | 'reviews';
     count?: number; // e.g., 10,000+ customers
+    text?: string;  // e.g., "47 people matched in the last hour"
     position: 'below-headline' | 'above-cta' | 'footer';
   };
 

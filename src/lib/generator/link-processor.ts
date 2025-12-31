@@ -39,11 +39,19 @@ function processLink(
     case 'keep':
       return null;
 
-    case 'remove-tracking':
-      return removeTrackingFromLink($, link);
+    case 'replace-all':
+      // Replace all links with the tracking URL
+      if (options.ctaUrlOverride) {
+        return applyLinkReplacement($, link, options.ctaUrlOverride, 'Replace all links with tracking URL');
+      }
+      return null;
 
-    case 'replace-custom':
-      return applyCustomReplacement($, link, options);
+    case 'remove-non-cta':
+      // Only keep CTA links, remove others
+      if (link.type !== 'cta') {
+        return applyLinkReplacement($, link, '#', 'Removed non-CTA link');
+      }
+      return null;
 
     default:
       return null;
