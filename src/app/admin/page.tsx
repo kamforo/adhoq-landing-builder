@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
@@ -22,7 +23,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus,
   RefreshCw,
@@ -31,8 +32,9 @@ import {
   Trash2,
   Upload,
   Loader2,
-  ExternalLink,
-  Copy,
+  Check,
+  X,
+  Pencil,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -58,6 +60,23 @@ type Project = {
   _count?: { variations: number };
 };
 
+// Relative time helper
+function getRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
 export default function AdminDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,9 +84,16 @@ export default function AdminDashboard() {
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectUrl, setNewProjectUrl] = useState('');
   const [isNewProjectDialogOpen, setIsNewProjectDialogOpen] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('all');
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Inline editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch all projects
   const fetchProjects = useCallback(async () => {
@@ -88,7 +114,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchProjects();
 
-    // Poll every 5 seconds for status updates
     const interval = setInterval(() => {
       const hasGenerating = projects.some(p => p.status === 'GENERATING');
       if (hasGenerating) {
@@ -98,6 +123,14 @@ export default function AdminDashboard() {
 
     return () => clearInterval(interval);
   }, [fetchProjects, projects]);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
 
   // Create new project
   const handleCreateProject = async () => {
@@ -128,7 +161,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Delete project
+  // Delete single project
   const handleDeleteProject = async (projectId: string) => {
     if (!confirm('Are you sure you want to delete this project?')) return;
 
@@ -138,47 +171,116 @@ export default function AdminDashboard() {
       });
       if (response.ok) {
         setProjects(prev => prev.filter(p => p.id !== projectId));
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          next.delete(projectId);
+          return next;
+        });
       }
     } catch (error) {
       console.error('Failed to delete project:', error);
     }
   };
 
-  // Start generation for a project
-  const handleStartGeneration = async (projectId: string) => {
-    // Update status to GENERATING immediately for UI feedback
-    setProjects(prev =>
-      prev.map(p =>
-        p.id === projectId ? { ...p, status: 'GENERATING' as const } : p
-      )
+  // Bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} project(s)?`)) return;
+
+    const deletePromises = Array.from(selectedIds).map(id =>
+      fetch(`/api/projects/${id}`, { method: 'DELETE' })
     );
 
-    try {
-      const response = await fetch(`/api/projects/${projectId}/generate`, {
-        method: 'POST',
-      });
+    await Promise.all(deletePromises);
+    setProjects(prev => prev.filter(p => !selectedIds.has(p.id)));
+    setSelectedIds(new Set());
+  };
 
-      if (!response.ok) {
-        // Revert status on error
-        setProjects(prev =>
-          prev.map(p =>
-            p.id === projectId ? { ...p, status: 'FAILED' as const } : p
-          )
-        );
+  // Bulk download
+  const handleBulkDownload = () => {
+    const selectedProjects = projects.filter(p => selectedIds.has(p.id));
+
+    selectedProjects.forEach(project => {
+      if (project.variations && project.variations.length > 0) {
+        project.variations.forEach(variation => {
+          const blob = new Blob([variation.html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${project.name}-v${variation.number}.html`;
+          document.body.appendChild(a);
+          a.click();
+          URL.revokeObjectURL(url);
+          a.remove();
+        });
       }
-      // On success, the polling will pick up the new status
-    } catch (error) {
-      console.error('Failed to start generation:', error);
-      setProjects(prev =>
-        prev.map(p =>
-          p.id === projectId ? { ...p, status: 'FAILED' as const } : p
-        )
-      );
+    });
+  };
+
+  // Toggle selection
+  const toggleSelection = (projectId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
+  // Select all / deselect all
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredProjects.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredProjects.map(p => p.id)));
     }
   };
 
+  // Start inline editing
+  const startEditing = (project: Project) => {
+    setEditingId(project.id);
+    setEditingName(project.name);
+  };
+
+  // Save inline edit
+  const saveEdit = async () => {
+    if (!editingId || !editingName.trim()) {
+      setEditingId(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/projects/${editingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editingName.trim() }),
+      });
+
+      if (response.ok) {
+        setProjects(prev =>
+          prev.map(p =>
+            p.id === editingId ? { ...p, name: editingName.trim() } : p
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Failed to rename project:', error);
+    } finally {
+      setEditingId(null);
+    }
+  };
+
+  // Cancel inline edit
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
   // Download variation
-  const handleDownload = async (project: Project, variation: Variation) => {
+  const handleDownload = (project: Project, variation: Variation) => {
     const blob = new Blob([variation.html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -190,7 +292,7 @@ export default function AdminDashboard() {
     a.remove();
   };
 
-  // Get status badge color
+  // Get status badge
   const getStatusBadge = (status: Project['status']) => {
     switch (status) {
       case 'COMPLETED':
@@ -227,6 +329,12 @@ export default function AdminDashboard() {
     completed: projects.filter(p => p.status === 'COMPLETED').length,
     draft: projects.filter(p => p.status === 'DRAFT').length,
   };
+
+  // Check if any selected projects have variations (for bulk download)
+  const canBulkDownload = Array.from(selectedIds).some(id => {
+    const project = projects.find(p => p.id === id);
+    return project?.variations && project.variations.length > 0;
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -303,24 +411,70 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-          <TabsList>
-            <TabsTrigger value="all">
-              All ({statusCounts.all})
-            </TabsTrigger>
-            <TabsTrigger value="generating">
-              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              Generating ({statusCounts.generating})
-            </TabsTrigger>
-            <TabsTrigger value="completed">
-              Completed ({statusCounts.completed})
-            </TabsTrigger>
-            <TabsTrigger value="draft">
-              Drafts ({statusCounts.draft})
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Tabs and Bulk Actions */}
+        <div className="flex items-center justify-between mb-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="all">
+                All ({statusCounts.all})
+              </TabsTrigger>
+              <TabsTrigger value="generating">
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Generating ({statusCounts.generating})
+              </TabsTrigger>
+              <TabsTrigger value="completed">
+                Completed ({statusCounts.completed})
+              </TabsTrigger>
+              <TabsTrigger value="draft">
+                Drafts ({statusCounts.draft})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* Bulk Actions Bar */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 bg-muted px-4 py-2 rounded-lg">
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkDownload}
+                disabled={!canBulkDownload}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Download
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Select All */}
+        {filteredProjects.length > 0 && (
+          <div className="flex items-center gap-2 mb-4">
+            <Checkbox
+              checked={selectedIds.size === filteredProjects.length && filteredProjects.length > 0}
+              onCheckedChange={toggleSelectAll}
+            />
+            <span className="text-sm text-muted-foreground">
+              Select all ({filteredProjects.length})
+            </span>
+          </div>
+        )}
 
         {/* Projects Grid */}
         {isLoading ? (
@@ -338,18 +492,69 @@ export default function AdminDashboard() {
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredProjects.map(project => (
-              <Card key={project.id} className="flex flex-col">
+              <Card
+                key={project.id}
+                className={`flex flex-col ${selectedIds.has(project.id) ? 'ring-2 ring-primary' : ''}`}
+              >
                 <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-2">
+                    {/* Checkbox */}
+                    <Checkbox
+                      checked={selectedIds.has(project.id)}
+                      onCheckedChange={() => toggleSelection(project.id)}
+                      className="mt-1"
+                    />
+
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg truncate">{project.name}</CardTitle>
+                      {/* Inline Editing */}
+                      {editingId === project.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            ref={editInputRef}
+                            value={editingName}
+                            onChange={e => setEditingName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveEdit();
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            className="h-7 text-lg font-semibold"
+                          />
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={saveEdit}>
+                            <Check className="h-4 w-4 text-green-600" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={cancelEdit}>
+                            <X className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 group">
+                          <CardTitle
+                            className="text-lg truncate cursor-pointer hover:text-primary"
+                            onClick={() => startEditing(project)}
+                          >
+                            {project.name}
+                          </CardTitle>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => startEditing(project)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Timestamps */}
                       <CardDescription className="text-xs">
-                        {new Date(project.createdAt).toLocaleDateString()}
+                        Updated {getRelativeTime(project.updatedAt)}
                       </CardDescription>
                     </div>
+
                     {getStatusBadge(project.status)}
                   </div>
                 </CardHeader>
+
                 <CardContent className="flex-1">
                   {/* Project Details */}
                   <div className="text-sm text-muted-foreground space-y-1 mb-4">
@@ -398,6 +603,7 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </CardContent>
+
                 <CardFooter className="flex gap-2 pt-4 border-t">
                   {project.status === 'DRAFT' && (
                     <Link href={`/?project=${project.id}`} className="flex-1">
