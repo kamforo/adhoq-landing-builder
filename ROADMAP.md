@@ -123,6 +123,14 @@ Analyzer → Architect → Builder → QA Agent → Repair Agent (if needed) →
 - [ ] Extract: What's the offer? Target audience? Desired action?
 - [ ] Tailor all content to specific offer context
 
+### Image Library
+- [ ] Scrape and store images from analyzed landing pages
+- [ ] Auto-tag images (model photos, backgrounds, icons, logos, etc.)
+- [ ] Categorize by vertical (dating, finance, health, etc.)
+- [ ] Search/filter images by tag, category, style
+- [ ] Use library images in new LP generation
+- [ ] Detect and remove duplicates
+
 ---
 
 ## V5 - Scale & Monetize (Future)
