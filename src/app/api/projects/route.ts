@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     const project = await createProject({
       name: body.name,
       description: body.description,
+      pipelineVersion: body.pipelineVersion || 'v1',
       sourceUrl: body.sourceUrl,
       sourceHtml: body.sourceHtml,
       trackingUrl: body.trackingUrl,

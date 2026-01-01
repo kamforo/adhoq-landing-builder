@@ -29,6 +29,8 @@ import {
   FileText,
   Clock,
   Settings,
+  Sparkles,
+  Zap,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -77,9 +79,13 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
 
-  // New project form
+  // New project form (Classic V1)
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // New V3 project form
+  const [newV3ProjectName, setNewV3ProjectName] = useState('');
+  const [isCreatingV3, setIsCreatingV3] = useState(false);
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -130,7 +136,7 @@ export default function AdminDashboard() {
     }
   }, [editingId]);
 
-  // Create new project and go to builder
+  // Create new project and go to builder (Classic V1)
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
 
@@ -141,6 +147,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newProjectName.trim(),
+          pipelineVersion: 'v1',
         }),
       });
 
@@ -152,6 +159,32 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Failed to create project:', error);
       setIsCreating(false);
+    }
+  };
+
+  // Create new V3 project and go to V3 builder
+  const handleCreateV3Project = async () => {
+    if (!newV3ProjectName.trim()) return;
+
+    setIsCreatingV3(true);
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newV3ProjectName.trim(),
+          pipelineVersion: 'v3',
+        }),
+      });
+
+      if (response.ok) {
+        const project = await response.json();
+        setNewV3ProjectName('');
+        router.push(`/v3?project=${project.id}`);
+      }
+    } catch (error) {
+      console.error('Failed to create V3 project:', error);
+      setIsCreatingV3(false);
     }
   };
 
@@ -347,6 +380,10 @@ export default function AdminDashboard() {
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
               <TabsTrigger value="new">New Project</TabsTrigger>
               <TabsTrigger value="projects">Projects</TabsTrigger>
+              <TabsTrigger value="v3" className="gap-1">
+                <Sparkles className="h-3 w-3" />
+                V3 Architect
+              </TabsTrigger>
             </TabsList>
 
             {activeTab === 'projects' && (
@@ -684,6 +721,139 @@ export default function AdminDashboard() {
                 </Table>
               </div>
             )}
+          </TabsContent>
+
+          {/* V3 Architect Tab */}
+          <TabsContent value="v3">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Create V3 Project */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-purple-500" />
+                    New V3 Project
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <h4 className="font-medium text-purple-900 dark:text-purple-100 mb-2">
+                      Architect Flow
+                    </h4>
+                    <p className="text-sm text-purple-700 dark:text-purple-300">
+                      The V3 pipeline uses an Architect agent that plans your LP structure before building,
+                      plus QA and Repair agents to ensure quality output.
+                    </p>
+                    <div className="mt-3 text-xs text-purple-600 dark:text-purple-400 font-mono">
+                      Analyzer → Architect → Builder → QA → Repair → Output
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Project Name</label>
+                    <Input
+                      value={newV3ProjectName}
+                      onChange={e => setNewV3ProjectName(e.target.value)}
+                      placeholder="My V3 Landing Page"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newV3ProjectName.trim()) {
+                          handleCreateV3Project();
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleCreateV3Project}
+                    disabled={isCreatingV3 || !newV3ProjectName.trim()}
+                    className="w-full bg-purple-600 hover:bg-purple-700"
+                  >
+                    {isCreatingV3 ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Create V3 Project
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* V3 Pipeline Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>V3 Pipeline Agents</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3 p-3 rounded-lg border">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold text-sm">
+                        1
+                      </div>
+                      <div>
+                        <h4 className="font-medium">Analyzer</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Extracts components, styles, and persuasion elements
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
+                        2
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-purple-900 dark:text-purple-100">Architect</h4>
+                        <p className="text-sm text-purple-700 dark:text-purple-300">
+                          Plans LP structure, flow, and conversion strategy
+                        </p>
+                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-lg border">
+                      <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-green-600 dark:text-green-300 font-bold text-sm">
+                        3
+                      </div>
+                      <div>
+                        <h4 className="font-medium">Builder</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Generates the HTML based on architect&apos;s plan
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
+                        4
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-purple-900 dark:text-purple-100">QA Agent</h4>
+                        <p className="text-sm text-purple-700 dark:text-purple-300">
+                          Validates HTML, tests functionality, checks responsiveness
+                        </p>
+                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
+                        5
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-purple-900 dark:text-purple-100">Repair Agent</h4>
+                        <p className="text-sm text-purple-700 dark:text-purple-300">
+                          Fixes issues found by QA or described by user
+                        </p>
+                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>

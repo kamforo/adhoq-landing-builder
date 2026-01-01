@@ -6,6 +6,7 @@ import type { Prisma } from '@prisma/client';
 export type CreateProjectInput = {
   name: string;
   description?: string;
+  pipelineVersion?: string;
   sourceUrl?: string;
   sourceHtml?: string;
   trackingUrl?: string;
@@ -14,6 +15,8 @@ export type CreateProjectInput = {
   country?: string;
   options?: Prisma.InputJsonValue;
   analysis?: Prisma.InputJsonValue;
+  architectPlan?: Prisma.InputJsonValue;
+  qaResults?: Prisma.InputJsonValue;
   folder?: string;
   tags?: string[];
   userId?: string;
@@ -30,6 +33,7 @@ export async function createProject(data: CreateProjectInput) {
     data: {
       name: data.name,
       description: data.description,
+      pipelineVersion: data.pipelineVersion || 'v1',
       sourceUrl: data.sourceUrl,
       sourceHtml: data.sourceHtml,
       trackingUrl: data.trackingUrl,
@@ -38,6 +42,8 @@ export async function createProject(data: CreateProjectInput) {
       country: data.country || 'US',
       options: data.options || {},
       analysis: data.analysis,
+      architectPlan: data.architectPlan,
+      qaResults: data.qaResults,
       folder: data.folder,
       tags: data.tags || [],
       userId: data.userId,

@@ -77,6 +77,9 @@ model Project {
   description   String?
   status        ProjectStatus @default(DRAFT)
 
+  // Pipeline version: v1 (classic), v3 (architect)
+  pipelineVersion String      @default("v1")
+
   // Source page data
   sourceUrl     String?
   sourceHtml    String?       @db.Text
@@ -86,6 +89,12 @@ model Project {
 
   // Analysis results (from AI Analyzer)
   analysis      Json?
+
+  // Architect plan (V3 only)
+  architectPlan Json?
+
+  // QA results (V3 only)
+  qaResults     Json?
 
   // Tracking URL
   trackingUrl   String?
