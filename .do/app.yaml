@@ -20,6 +20,7 @@ services:
       - key: OPENAI_API_KEY
         scope: RUN_AND_BUILD_TIME
         type: SECRET
+      # Use Supabase pooler (aws-0-us-west-2) for IPv4 compatibility with DO
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
         type: SECRET

@@ -16,6 +16,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
+import {
   Plus,
   RefreshCw,
   Download,
@@ -31,6 +35,8 @@ import {
   Settings,
   Sparkles,
   Zap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -94,6 +100,10 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Preview modal state
+  const [previewProject, setPreviewProject] = useState<Project | null>(null);
+  const [previewVariationIndex, setPreviewVariationIndex] = useState(0);
 
   // Ref to track projects for polling without causing re-renders
   const projectsRef = useRef(projects);
@@ -322,6 +332,30 @@ export default function AdminDashboard() {
       URL.revokeObjectURL(url);
       a.remove();
     });
+  };
+
+  // Preview project variations
+  const handlePreviewProject = (project: Project) => {
+    if (!project.variations || project.variations.length === 0) return;
+    setPreviewProject(project);
+    setPreviewVariationIndex(0);
+  };
+
+  const closePreview = () => {
+    setPreviewProject(null);
+    setPreviewVariationIndex(0);
+  };
+
+  const nextVariation = () => {
+    if (previewProject && previewVariationIndex < previewProject.variations.length - 1) {
+      setPreviewVariationIndex(prev => prev + 1);
+    }
+  };
+
+  const prevVariation = () => {
+    if (previewVariationIndex > 0) {
+      setPreviewVariationIndex(prev => prev - 1);
+    }
   };
 
   // Get status badge
@@ -694,15 +728,26 @@ export default function AdminDashboard() {
                               </Button>
                             )}
                             {project.variations && project.variations.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleDownloadProject(project)}
-                                title="Download"
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => handlePreviewProject(project)}
+                                  title="Preview"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => handleDownloadProject(project)}
+                                  title="Download"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </>
                             )}
                             <Button
                               variant="ghost"
@@ -857,6 +902,78 @@ export default function AdminDashboard() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Preview Modal */}
+      <Dialog open={!!previewProject} onOpenChange={(open) => !open && closePreview()}>
+        <DialogContent className="max-w-6xl h-[90vh] p-0 flex flex-col">
+          {previewProject && (
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b bg-background">
+                <div className="flex items-center gap-4">
+                  <h2 className="font-semibold">{previewProject.name}</h2>
+                  {previewProject.variations.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={prevVariation}
+                        disabled={previewVariationIndex === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Variation {previewVariationIndex + 1} of {previewProject.variations.length}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={nextVariation}
+                        disabled={previewVariationIndex === previewProject.variations.length - 1}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const variation = previewProject.variations[previewVariationIndex];
+                      const blob = new Blob([variation.html], { type: 'text/html' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${previewProject.name}-v${variation.number}.html`;
+                      document.body.appendChild(a);
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      a.remove();
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+
+              {/* Preview iframe */}
+              <div className="flex-1 bg-gray-100">
+                <iframe
+                  srcDoc={previewProject.variations[previewVariationIndex]?.html || ''}
+                  className="w-full h-full border-0"
+                  title="Preview"
+                  sandbox="allow-scripts"
+                />
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
