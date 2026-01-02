@@ -365,7 +365,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold">Landing Page Builder</h1>
+          <h1 className="text-2xl font-bold">Adhoq Landing Page Builder</h1>
           <p className="text-sm text-muted-foreground">
             Create and manage your landing pages
           </p>
