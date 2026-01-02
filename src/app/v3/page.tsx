@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -124,7 +124,26 @@ const STEPS: { id: Step; label: string; icon: React.ElementType; description: st
   { id: 'complete', label: 'Complete', icon: Sparkles, description: 'Download LP' },
 ];
 
+function V3BuilderLoading() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+        <p className="text-muted-foreground">Loading V3 Builder...</p>
+      </div>
+    </div>
+  );
+}
+
 export default function V3BuilderPage() {
+  return (
+    <Suspense fallback={<V3BuilderLoading />}>
+      <V3BuilderContent />
+    </Suspense>
+  );
+}
+
+function V3BuilderContent() {
   const searchParams = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
