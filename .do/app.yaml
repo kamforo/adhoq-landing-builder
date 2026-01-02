@@ -1,0 +1,28 @@
+name: adhoq-landing-builder
+region: nyc
+services:
+  - name: web
+    github:
+      repo: kamforo/adhoq-landing-builder
+      branch: main
+      deploy_on_push: true
+    build_command: npm run build
+    run_command: npm start
+    http_port: 3002
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: GROK_API_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: OPENAI_API_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: DIRECT_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
