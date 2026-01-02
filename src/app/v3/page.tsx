@@ -3,13 +3,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import {
   UploadZone,
   ParsedSummary,
 } from '@/components/landing-builder';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -19,13 +23,20 @@ import {
   PenTool,
   Hammer,
   CheckCircle,
+  XCircle,
   Wrench,
   Loader2,
   ChevronRight,
+  Download,
+  Eye,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import type { ParsedLandingPage } from '@/types';
+import type { ComponentAnalysis } from '@/types/component-analysis';
 
 type Step = 'upload' | 'analyze' | 'architect' | 'build' | 'qa' | 'repair' | 'complete';
+type ParseInput = { type: 'url' | 'file'; value: string | File };
 
 type Project = {
   id: string;
@@ -37,6 +48,53 @@ type Project = {
   analysis?: unknown;
   architectPlan?: unknown;
   qaResults?: unknown;
+};
+
+type QAResultSummary = {
+  id: string;
+  passed: boolean;
+  score: number;
+  criticalCount: number;
+  majorCount: number;
+  summary: string;
+};
+
+type BlueprintSummary = {
+  id: string;
+  totalSteps: number;
+  sections: { stepNumber: number; type: string; title: string }[];
+  visualDirection: {
+    colorPalette: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      background: string;
+      text: string;
+    };
+  };
+  conversionStrategy: {
+    mainHook: string;
+    valueProposition: string;
+    primaryPersuasion: string[];
+    urgencyTactics: string[];
+  };
+};
+
+type GeneratedVariation = {
+  id: string;
+  variationNumber: number;
+  html: string;
+  qaResult?: {
+    passed: boolean;
+    score: number;
+    criticalCount: number;
+    majorCount: number;
+    issues?: { id: string; severity: string; title: string; description: string }[];
+  };
+  repairResult?: {
+    fixedCount: number;
+    summary: string;
+  };
 };
 
 const STEPS: { id: Step; label: string; icon: React.ElementType; description: string }[] = [
@@ -53,8 +111,19 @@ export default function V3BuilderPage() {
   const searchParams = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
   const [step, setStep] = useState<Step>('upload');
   const [parsedPage, setParsedPage] = useState<ParsedLandingPage | null>(null);
+  const [analysis, setAnalysis] = useState<ComponentAnalysis | null>(null);
+  const [blueprint, setBlueprint] = useState<BlueprintSummary | null>(null);
+  const [variations, setVariations] = useState<GeneratedVariation[]>([]);
+  const [qaResults, setQaResults] = useState<QAResultSummary[]>([]);
+  const [userIssueDescription, setUserIssueDescription] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   // Load project from URL
   const loadProject = useCallback(async (projectId: string) => {
@@ -91,23 +160,193 @@ export default function V3BuilderPage() {
     }
   }, [searchParams, loadProject]);
 
-  // Handle page parsed
-  const handlePageParsed = async (parsed: ParsedLandingPage) => {
-    setParsedPage(parsed);
+  // Handle parse request
+  const handleParse = async (input: ParseInput) => {
+    setIsParsing(true);
 
-    // Update project with source HTML
-    if (project) {
-      await fetch(`/api/projects/${project.id}`, {
-        method: 'PATCH',
+    try {
+      let response;
+
+      if (input.type === 'url') {
+        response = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: input.value }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append('file', input.value);
+        response = await fetch('/api/parse', {
+          method: 'POST',
+          body: formData,
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to parse page');
+      }
+
+      const parsed: ParsedLandingPage = await response.json();
+      setParsedPage(parsed);
+
+      // Update project with source HTML
+      if (project) {
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceUrl: parsed.sourceUrl || null,
+            sourceHtml: parsed.html,
+          }),
+        });
+      }
+
+      setStep('analyze');
+    } catch (error) {
+      console.error('Parse error:', error);
+      alert('Failed to parse page. Please try again.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Run the full V3 generation workflow
+  const runV3Generation = async () => {
+    if (!parsedPage) return;
+
+    setIsGenerating(true);
+    setGenerationError(null);
+    setStep('analyze');
+
+    try {
+      // Call V3 API which runs the full workflow
+      const response = await fetch('/api/v3/generate', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceUrl: parsed.sourceUrl || null,
-          sourceHtml: parsed.html,
+          sourcePage: parsedPage,
+          options: {
+            variationCount: 1,
+            styleHandling: 'generate-new',
+          },
         }),
       });
-    }
 
-    setStep('analyze');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Generation failed');
+      }
+
+      const result = await response.json();
+
+      // Update state with results
+      if (result.analysis) {
+        setAnalysis(result.analysis);
+        setStep('architect');
+      }
+
+      if (result.blueprint) {
+        setBlueprint(result.blueprint);
+        setStep('build');
+      }
+
+      if (result.variations && result.variations.length > 0) {
+        setVariations(result.variations);
+        setStep('qa');
+      }
+
+      if (result.qaResults) {
+        setQaResults(result.qaResults);
+
+        // Check if any QA failed
+        const hasFailures = result.qaResults.some((qa: QAResultSummary) => !qa.passed);
+        if (hasFailures) {
+          setStep('repair');
+        } else {
+          setStep('complete');
+        }
+      }
+
+      // Update project with results
+      if (project && result.variations?.[0]) {
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'completed',
+            generatedHtml: result.variations[0].html,
+            analysis: result.analysis,
+            architectPlan: result.blueprint,
+            qaResults: result.qaResults?.[0],
+          }),
+        });
+      }
+    } catch (error) {
+      console.error('V3 generation error:', error);
+      setGenerationError(error instanceof Error ? error.message : 'Generation failed');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Run repair on a variation
+  const runRepair = async (variationIndex: number) => {
+    if (!variations[variationIndex]) return;
+
+    setIsRepairing(true);
+
+    try {
+      const response = await fetch('/api/v3/repair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: variations[variationIndex].html,
+          blueprint,
+          qaResult: variations[variationIndex].qaResult,
+          userIssue: userIssueDescription ? { description: userIssueDescription } : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Repair failed');
+      }
+
+      const result = await response.json();
+
+      // Update variation with repaired HTML
+      const updatedVariations = [...variations];
+      updatedVariations[variationIndex] = {
+        ...updatedVariations[variationIndex],
+        html: result.html,
+        repairResult: {
+          fixedCount: result.fixedCount,
+          summary: result.summary,
+        },
+      };
+      setVariations(updatedVariations);
+
+      // Clear user input and move to complete
+      setUserIssueDescription('');
+      setStep('complete');
+    } catch (error) {
+      console.error('Repair error:', error);
+      alert('Repair failed. Please try again.');
+    } finally {
+      setIsRepairing(false);
+    }
+  };
+
+  // Download HTML file
+  const downloadHtml = (html: string, filename: string) => {
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Get current step index
@@ -190,7 +429,11 @@ export default function V3BuilderPage() {
                         ${isFuture ? 'bg-muted text-muted-foreground' : ''}
                       `}
                     >
-                      <Icon className="h-5 w-5" />
+                      {isActive && isGenerating ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Icon className="h-5 w-5" />
+                      )}
                     </div>
                     <span className={`text-xs mt-1 ${isActive ? 'font-medium' : 'text-muted-foreground'}`}>
                       {s.label}
@@ -208,20 +451,39 @@ export default function V3BuilderPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
+        {/* Error Display */}
+        {generationError && (
+          <div className="max-w-2xl mx-auto mb-6">
+            <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3 text-red-700 dark:text-red-300">
+                  <XCircle className="h-5 w-5" />
+                  <div>
+                    <p className="font-medium">Generation Failed</p>
+                    <p className="text-sm">{generationError}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setGenerationError(null);
+                    setStep('upload');
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Step 1: Upload */}
         {step === 'upload' && (
           <div className="max-w-2xl mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Upload className="h-5 w-5" />
-                  Upload Source Page
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UploadZone onPageParsed={handlePageParsed} />
-              </CardContent>
-            </Card>
+            <UploadZone onParse={handleParse} isLoading={isParsing} />
           </div>
         )}
 
@@ -232,30 +494,53 @@ export default function V3BuilderPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Search className="h-5 w-5" />
-                  Analyzing Page...
+                  Analyze Source Page
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {parsedPage && <ParsedSummary parsed={parsedPage} />}
+                {parsedPage && <ParsedSummary page={parsedPage} />}
 
-                <div className="mt-6 p-4 bg-muted rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
-                    <div>
-                      <p className="font-medium">AI Analyzer is extracting components...</p>
-                      <p className="text-sm text-muted-foreground">
-                        Detecting headlines, CTAs, persuasion elements, and styles
-                      </p>
+                {analysis ? (
+                  <div className="mt-6 p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                      <CheckCircle className="h-5 w-5" />
+                      <span className="font-medium">Analysis Complete</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Components:</span>
+                        <span className="ml-2 font-medium">{analysis.components.length}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Vertical:</span>
+                        <span className="ml-2 font-medium capitalize">{analysis.vertical}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Tone:</span>
+                        <span className="ml-2 font-medium capitalize">{analysis.tone}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={() => setStep('architect')} className="bg-purple-600 hover:bg-purple-700">
-                    Continue to Architect
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
+                ) : isGenerating ? (
+                  <div className="mt-6 p-4 bg-muted rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                      <div>
+                        <p className="font-medium">AI Analyzer is extracting components...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Detecting headlines, CTAs, persuasion elements, and styles
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex justify-end">
+                    <Button onClick={runV3Generation} className="bg-purple-600 hover:bg-purple-700">
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Start V3 Generation
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -273,37 +558,65 @@ export default function V3BuilderPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="p-6 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <h3 className="font-medium text-purple-900 dark:text-purple-100 mb-4">
-                    Planning Landing Page Structure
-                  </h3>
+                {blueprint ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                      <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                        <CheckCircle className="h-5 w-5" />
+                        <span className="font-medium">Blueprint Created</span>
+                      </div>
+                    </div>
 
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
-                      <span>Deciding optimal number of steps...</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-medium mb-2">Structure ({blueprint.totalSteps} steps)</h4>
+                        <div className="space-y-1 text-sm">
+                          {blueprint.sections.map(s => (
+                            <div key={s.stepNumber} className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">{s.type}</Badge>
+                              <span>Step {s.stepNumber}: {s.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium mb-2">Color Palette</h4>
+                        <div className="flex gap-2">
+                          {Object.entries(blueprint.visualDirection.colorPalette).map(([name, color]) => (
+                            <div key={name} className="text-center">
+                              <div
+                                className="w-8 h-8 rounded border"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="text-xs text-muted-foreground">{name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Choosing persuasion elements...</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Planning component placement...</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Selecting conversion strategy...</span>
+
+                    <div>
+                      <h4 className="font-medium mb-2">Conversion Strategy</h4>
+                      <div className="text-sm text-muted-foreground">
+                        <p><strong>Hook:</strong> {blueprint.conversionStrategy.mainHook}</p>
+                        <p><strong>Value:</strong> {blueprint.conversionStrategy.valueProposition}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={() => setStep('build')} className="bg-purple-600 hover:bg-purple-700">
-                    Continue to Builder
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
+                ) : (
+                  <div className="p-6 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                      <div>
+                        <p className="font-medium">Planning Landing Page Structure...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Deciding steps, components, colors, and conversion strategy
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -320,24 +633,28 @@ export default function V3BuilderPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="p-6 bg-muted rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    <div>
-                      <p className="font-medium">Generating HTML based on Architect&apos;s plan...</p>
-                      <p className="text-sm text-muted-foreground">
-                        Building responsive, self-contained landing page
-                      </p>
+                {variations.length > 0 ? (
+                  <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                      <CheckCircle className="h-5 w-5" />
+                      <span className="font-medium">
+                        Generated {variations.length} variation{variations.length > 1 ? 's' : ''}
+                      </span>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={() => setStep('qa')} className="bg-purple-600 hover:bg-purple-700">
-                    Continue to QA
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
-                </div>
+                ) : (
+                  <div className="p-6 bg-muted rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <div>
+                        <p className="font-medium">Generating HTML based on Architect&apos;s plan...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Building responsive, self-contained landing page
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -355,41 +672,65 @@ export default function V3BuilderPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="p-6 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <h3 className="font-medium text-purple-900 dark:text-purple-100 mb-4">
-                    Validating Generated Page
-                  </h3>
+                {qaResults.length > 0 ? (
+                  <div className="space-y-4">
+                    {qaResults.map((qa, index) => (
+                      <div
+                        key={qa.id}
+                        className={`p-4 rounded-lg border ${
+                          qa.passed
+                            ? 'bg-green-50 dark:bg-green-950/20 border-green-200'
+                            : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {qa.passed ? (
+                              <CheckCircle className="h-5 w-5 text-green-600" />
+                            ) : (
+                              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                            )}
+                            <span className="font-medium">
+                              Variation {index + 1}: {qa.passed ? 'Passed' : 'Issues Found'}
+                            </span>
+                          </div>
+                          <Badge variant="outline">Score: {qa.score}/100</Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">{qa.summary}</p>
+                        {!qa.passed && (
+                          <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                            {qa.criticalCount} critical, {qa.majorCount} major issues
+                          </p>
+                        )}
+                      </div>
+                    ))}
 
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
-                      <span>Checking HTML structure...</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Testing JavaScript functionality...</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Verifying buttons and links...</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="h-4 w-4" />
-                      <span>Checking mobile responsiveness...</span>
+                    <div className="flex justify-end gap-2">
+                      {qaResults.some(qa => !qa.passed) && (
+                        <Button variant="outline" onClick={() => setStep('repair')}>
+                          <Wrench className="h-4 w-4 mr-2" />
+                          Fix Issues
+                        </Button>
+                      )}
+                      <Button onClick={() => setStep('complete')} className="bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Continue to Download
+                      </Button>
                     </div>
                   </div>
-                </div>
-
-                <div className="mt-4 flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setStep('repair')}>
-                    <Wrench className="h-4 w-4 mr-2" />
-                    Fix Issues
-                  </Button>
-                  <Button onClick={() => setStep('complete')} className="bg-green-600 hover:bg-green-700">
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    All Good - Complete
-                  </Button>
-                </div>
+                ) : (
+                  <div className="p-6 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                      <div>
+                        <p className="font-medium">Validating Generated Page...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Checking structure, JS functionality, responsiveness
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -408,31 +749,52 @@ export default function V3BuilderPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                    <h4 className="font-medium text-yellow-900 dark:text-yellow-100 mb-2">
-                      Issues Found
-                    </h4>
-                    <ul className="text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside space-y-1">
-                      <li>Button click handler not working on step 3</li>
-                      <li>Timer not starting on page load</li>
-                    </ul>
-                  </div>
+                  {variations[0]?.qaResult && !variations[0].qaResult.passed && (
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                      <h4 className="font-medium text-yellow-900 dark:text-yellow-100 mb-2">
+                        Issues to Fix ({variations[0].qaResult.criticalCount + variations[0].qaResult.majorCount})
+                      </h4>
+                      {variations[0].qaResult.issues?.slice(0, 5).map(issue => (
+                        <div key={issue.id} className="text-sm py-1">
+                          <Badge variant="outline" className="mr-2 text-xs">
+                            {issue.severity}
+                          </Badge>
+                          <span className="text-yellow-700 dark:text-yellow-300">{issue.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div>
                     <label className="text-sm font-medium">Describe additional issues (optional)</label>
-                    <Input
-                      placeholder="e.g., The countdown timer shows wrong time format..."
+                    <Textarea
+                      placeholder="e.g., The countdown timer shows wrong time format, buttons are too small..."
                       className="mt-2"
+                      value={userIssueDescription}
+                      onChange={(e) => setUserIssueDescription(e.target.value)}
                     />
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setStep('qa')}>
-                      Back to QA
+                    <Button variant="outline" onClick={() => setStep('complete')}>
+                      Skip Repair
                     </Button>
-                    <Button className="bg-purple-600 hover:bg-purple-700">
-                      <Wrench className="h-4 w-4 mr-2" />
-                      Fix All Issues
+                    <Button
+                      onClick={() => runRepair(0)}
+                      disabled={isRepairing}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {isRepairing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Repairing...
+                        </>
+                      ) : (
+                        <>
+                          <Wrench className="h-4 w-4 mr-2" />
+                          Fix All Issues
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -457,13 +819,41 @@ export default function V3BuilderPage() {
                 </div>
                 <h3 className="text-xl font-bold mb-2">Your Landing Page is Ready</h3>
                 <p className="text-muted-foreground mb-6">
-                  The V3 pipeline has successfully generated and validated your landing page.
+                  The V3 pipeline has successfully generated{variations[0]?.repairResult ? ' and repaired' : ''} your landing page.
                 </p>
+
+                {variations[0]?.repairResult && (
+                  <div className="mb-6 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg text-sm">
+                    <CheckCircle className="h-4 w-4 inline mr-2 text-green-600" />
+                    Fixed {variations[0].repairResult.fixedCount} issues: {variations[0].repairResult.summary}
+                  </div>
+                )}
+
                 <div className="flex justify-center gap-4">
-                  <Button variant="outline">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (variations[0]?.html) {
+                        setPreviewHtml(variations[0].html);
+                        setPreviewOpen(true);
+                      }
+                    }}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
                     Preview
                   </Button>
-                  <Button className="bg-purple-600 hover:bg-purple-700">
+                  <Button
+                    className="bg-purple-600 hover:bg-purple-700"
+                    onClick={() => {
+                      if (variations[0]?.html) {
+                        downloadHtml(
+                          variations[0].html,
+                          `${project.name.replace(/\s+/g, '-').toLowerCase()}-v3.html`
+                        );
+                      }
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
                     Download HTML
                   </Button>
                 </div>
@@ -472,6 +862,20 @@ export default function V3BuilderPage() {
           </div>
         )}
       </main>
+
+      {/* Preview Modal */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <div className="w-full h-[80vh]">
+            <iframe
+              srcDoc={previewHtml}
+              className="w-full h-full border-0"
+              title="Preview"
+              sandbox="allow-same-origin allow-scripts"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # Adhoq Landing Page Builder - Roadmap
 
-> Last updated: 2025-12-30
+> Last updated: 2026-01-01
 
 ---
 
@@ -53,47 +53,62 @@ Input Page → Analyzer Agent → Prompt Writer → Builder Agent → QA Agent �
 
 ---
 
-## V3 - Architect Flow (Next)
+## V3 - Architect Flow (In Progress)
 
-### Dual Pipeline System
-- [ ] **Flow Selector** in admin - choose V1 (Classic) or V2 (Architect) pipeline
-- [ ] Both flows accessible independently, won't break existing workflow
-- [ ] Per-project flow selection
+### Dual Pipeline System ✅
+- [x] **V3 Architect tab** in admin - separate from V1 (Classic) workflow
+- [x] Both flows accessible independently, won't break existing workflow
+- [x] Per-project pipeline version tracking (`pipelineVersion` field)
 
 ### V1 Flow (Classic) - Current
 ```
 Analyzer → Prompt Writer → Builder → Output
 ```
 
-### V2 Flow (Architect) - New
+### V3 Flow (Architect) - New ✅
 ```
 Analyzer → Architect → Builder → QA Agent → Repair Agent (if needed) → Output
 ```
 
-### Architect Agent (evolves from Prompt Writer)
-- [ ] Receives analyzer data + user preferences
-- [ ] **Plans LP structure** before writing prompt:
-  - [ ] Decide number of steps and flow type
-  - [ ] Choose which persuasion elements to include
-  - [ ] Plan component placement and hierarchy
-  - [ ] Select conversion strategy (curiosity, urgency, social proof mix)
-- [ ] **Writes detailed builder prompt** based on plan
-- [ ] Outputs both: architecture plan (for UI) + builder prompt
+### Architect Agent ✅
+- [x] Receives analyzer data + user preferences
+- [x] **Plans LP structure** before writing prompt:
+  - [x] Decides number of steps and section types (hook, quiz, cta)
+  - [x] Chooses persuasion elements to include
+  - [x] Plans component placement per step
+  - [x] Selects conversion strategy and urgency tactics
+- [x] **Creates visual direction** (color palette, typography, imagery)
+- [x] **Writes detailed builder prompt** based on blueprint
+- [x] Outputs: LPBlueprint (for UI) + builder prompt
 
-### QA Agent
-- [ ] Reviews and tests generated pages (separate LLM, e.g. OpenAI)
-  - [ ] Validate HTML structure and JS functionality
-  - [ ] Check all buttons/links work correctly
-  - [ ] Verify countdown timers, forms, and interactive elements
-  - [ ] Test mobile responsiveness
-- [ ] Returns pass/fail with specific issues
+### QA Agent ✅
+- [x] Reviews and tests generated pages (uses OpenAI for fresh perspective)
+  - [x] Validates HTML structure and JS functionality
+  - [x] Checks all buttons/links work correctly (onclick handlers defined)
+  - [x] Verifies redirect URL is correct
+  - [x] Tests responsive CSS rules (no overflow:hidden, min-height)
+- [x] Returns pass/fail with issues (critical, major, minor, suggestion)
+- [x] Score-based system (0-100)
+- [x] Fallback to basic validation if OpenAI unavailable
 
-### Repair Agent
-- [ ] Fixes issues found by QA or reported by user
-  - [ ] Describe issue in natural language → agent fixes it
-  - [ ] One-click "Fix Issues" for common problems
-  - [ ] Auto-retry with different approach if generation fails
-- [ ] Manual edit mode for quick fixes before download
+### Repair Agent ✅
+- [x] Fixes issues found by QA automatically
+- [x] Accepts user-described issues in natural language
+- [x] Common auto-fixes: overflow:hidden, max-height:100vh, missing functions
+- [x] One-click "Fix All Issues" in V3 workflow
+
+### V3 UI ✅
+- [x] Step visualization (Upload → Analyze → Architect → Build → QA → Repair → Complete)
+- [x] Blueprint preview (sections, color palette, conversion strategy)
+- [x] QA results display with pass/fail status
+- [x] Issue list with severity badges
+- [x] User issue description textarea for Repair agent
+- [x] Preview and download in completion step
+
+### Remaining V3 Tasks
+- [ ] Add styling options to V3 workflow (color scheme, tone, language)
+- [ ] Persist blueprint to database
+- [ ] Show V3 projects separately in admin Projects tab
 
 ---
 

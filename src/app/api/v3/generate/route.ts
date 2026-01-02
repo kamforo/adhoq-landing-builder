@@ -1,0 +1,271 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { analyzeWithAI } from '@/lib/analyzer/ai-analyzer';
+import { planLandingPage, reviewLandingPage, repairLandingPage, quickValidate } from '@/lib/agents';
+import { buildVariations } from '@/lib/builder-agent';
+import type { ParsedLandingPage, GenerationOptions } from '@/types';
+import type { DatingVertical } from '@/types/component-analysis';
+import type { LPBlueprint } from '@/lib/agents/architect';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { sourcePage, options, step } = body as {
+      sourcePage: ParsedLandingPage;
+      options: Partial<GenerationOptions>;
+      step?: 'analyze' | 'architect' | 'build' | 'qa' | 'repair' | 'full';
+    };
+
+    if (!sourcePage) {
+      return NextResponse.json(
+        { error: 'Source page data is required' },
+        { status: 400 }
+      );
+    }
+
+    // Default to full workflow
+    const currentStep = step || 'full';
+
+    // For single steps, handle them individually
+    if (currentStep === 'analyze') {
+      return handleAnalyzeStep(sourcePage, options);
+    }
+
+    // Full V3 workflow
+    return handleFullV3Workflow(sourcePage, options);
+  } catch (error) {
+    console.error('V3 Generate error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Handle just the analyze step
+ */
+async function handleAnalyzeStep(
+  sourcePage: ParsedLandingPage,
+  options: Partial<GenerationOptions>
+) {
+  console.log('\n📊 V3 Step 1: AI Analyzer...');
+  const analysis = await analyzeWithAI(sourcePage.html, sourcePage.sourceUrl);
+
+  // Apply overrides
+  if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+    analysis.trackingUrl = options.ctaUrlOverride.trim();
+  }
+  if (options.vertical && options.vertical !== 'auto') {
+    analysis.vertical = options.vertical as DatingVertical;
+  }
+  if (options.stepCount && options.stepCount > 0) {
+    analysis.flow.totalSteps = options.stepCount;
+  }
+
+  return NextResponse.json({
+    success: true,
+    step: 'analyze',
+    analysis,
+  });
+}
+
+/**
+ * Full V3 workflow: Analyzer → Architect → Builder → QA → Repair (if needed)
+ */
+async function handleFullV3Workflow(
+  sourcePage: ParsedLandingPage,
+  options: Partial<GenerationOptions>
+) {
+  console.log('=== V3 ARCHITECT WORKFLOW ===');
+
+  const variationCount = Math.min(options.variationCount || 1, 5);
+
+  // ===== STEP 1: AI ANALYZER =====
+  console.log('\n📊 Step 1: AI Analyzer...');
+  const analysis = await analyzeWithAI(sourcePage.html, sourcePage.sourceUrl);
+
+  // Apply overrides
+  if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+    analysis.trackingUrl = options.ctaUrlOverride.trim();
+  }
+  if (!analysis.trackingUrl) {
+    const bestLink = findBestTrackingLink(sourcePage);
+    if (bestLink) analysis.trackingUrl = bestLink;
+  }
+  if (options.vertical && options.vertical !== 'auto') {
+    analysis.vertical = options.vertical as DatingVertical;
+  }
+  if (options.stepCount && options.stepCount > 0) {
+    analysis.flow.totalSteps = options.stepCount;
+  }
+
+  console.log('Analysis:', {
+    components: analysis.components.length,
+    vertical: analysis.vertical,
+    tone: analysis.tone,
+    trackingUrl: analysis.trackingUrl,
+  });
+
+  // ===== STEP 2: ARCHITECT =====
+  console.log('\n🏗️ Step 2: Architect...');
+  const stylingOptions = {
+    colorScheme: options.colorScheme,
+    customColors: options.customColors,
+    layoutStyle: options.layoutStyle,
+    linkHandling: options.linkHandling,
+    textHandling: options.textHandling,
+    tone: options.tone,
+    targetAge: options.targetAge,
+    language: options.language,
+    country: options.country,
+    creativity: options.creativity,
+    customInstructions: options.textInstructions,
+    addElements: options.addElements,
+  };
+
+  const blueprint = await planLandingPage(analysis, stylingOptions);
+  console.log('Blueprint created:', {
+    sections: blueprint.sections.length,
+    totalSteps: blueprint.totalSteps,
+    promptLength: blueprint.builderPrompt.length,
+  });
+
+  // ===== STEP 3: BUILDER =====
+  console.log('\n🔨 Step 3: Builder...');
+  const builderPrompt = {
+    systemContext: `Building ${blueprint.vertical} dating LP with ${blueprint.totalSteps} steps`,
+    requirements: blueprint.builderPrompt,
+    suggestions: '',
+    componentInstructions: '',
+    technicalRequirements: '',
+    fullPrompt: blueprint.builderPrompt,
+  };
+
+  const buildResults = await buildVariations(builderPrompt, analysis, variationCount);
+  console.log('Build complete:', {
+    variations: buildResults.length,
+    successful: buildResults.filter(r => r.success).length,
+  });
+
+  // ===== STEP 4: QA =====
+  console.log('\n🔍 Step 4: QA Review...');
+  const qaResults = [];
+  const finalVariations = [];
+
+  for (const result of buildResults) {
+    if (!result.success) {
+      finalVariations.push({
+        ...result,
+        qaResult: null,
+        repairResult: null,
+      });
+      continue;
+    }
+
+    // Run QA on each variation
+    let qaResult;
+    try {
+      // Try OpenAI-based QA first
+      qaResult = await reviewLandingPage(result.html, blueprint);
+    } catch (error) {
+      console.log('OpenAI QA failed, using quick validate:', error);
+      qaResult = quickValidate(result.html, blueprint);
+    }
+
+    qaResults.push(qaResult);
+    console.log(`Variation ${result.id} QA:`, {
+      passed: qaResult.passed,
+      score: qaResult.score,
+      critical: qaResult.criticalCount,
+      major: qaResult.majorCount,
+    });
+
+    // ===== STEP 5: REPAIR (if needed) =====
+    let finalHtml = result.html;
+    let repairResult = null;
+
+    if (!qaResult.passed && qaResult.criticalCount > 0) {
+      console.log('\n🔧 Step 5: Repair Agent...');
+      try {
+        repairResult = await repairLandingPage(result.html, blueprint, qaResult);
+        finalHtml = repairResult.html;
+        console.log('Repair complete:', {
+          fixed: repairResult.fixedCount,
+          failed: repairResult.failedCount,
+        });
+      } catch (error) {
+        console.error('Repair failed:', error);
+      }
+    }
+
+    finalVariations.push({
+      id: result.id,
+      html: finalHtml,
+      success: result.success,
+      generatedAt: result.generatedAt,
+      qaResult,
+      repairResult,
+    });
+  }
+
+  // Convert to response format
+  const variations = finalVariations.map((result, index) => ({
+    id: result.id,
+    sourcePageId: sourcePage.id || 'unknown',
+    variationNumber: index + 1,
+    html: result.html,
+    assets: [],
+    changes: [{
+      type: 'structure' as const,
+      selector: 'html',
+      originalValue: '',
+      newValue: '',
+      reason: 'Generated with V3 Architect workflow',
+    }],
+    generatedAt: result.generatedAt,
+    qaResult: result.qaResult,
+    repairResult: result.repairResult,
+  }));
+
+  return NextResponse.json({
+    success: true,
+    variations,
+    count: variations.length,
+    workflow: 'v3-architect',
+    analysis,
+    blueprint: {
+      id: blueprint.id,
+      totalSteps: blueprint.totalSteps,
+      sections: blueprint.sections.map(s => ({
+        stepNumber: s.stepNumber,
+        type: s.type,
+        title: s.title,
+      })),
+      visualDirection: blueprint.visualDirection,
+      conversionStrategy: blueprint.conversionStrategy,
+    },
+    qaResults: qaResults.map(qa => ({
+      id: qa.id,
+      passed: qa.passed,
+      score: qa.score,
+      criticalCount: qa.criticalCount,
+      majorCount: qa.majorCount,
+      summary: qa.summary,
+    })),
+  });
+}
+
+/**
+ * Find best tracking link from parsed page
+ */
+function findBestTrackingLink(sourcePage: ParsedLandingPage): string | null {
+  if (!sourcePage.links || sourcePage.links.length === 0) return null;
+
+  const ctaLink = sourcePage.links.find(l => l.type === 'cta' && l.originalUrl !== '#');
+  const affiliateLink = sourcePage.links.find(l => l.type === 'affiliate');
+  const trackingLink = sourcePage.links.find(l => l.type === 'tracking' && l.originalUrl.startsWith('http'));
+  const redirectLink = sourcePage.links.find(l => l.type === 'redirect');
+
+  const bestLink = ctaLink || affiliateLink || trackingLink || redirectLink;
+  return bestLink?.originalUrl || null;
+}
