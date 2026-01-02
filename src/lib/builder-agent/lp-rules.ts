@@ -12,13 +12,15 @@ export const LP_RULES = {
    - Design for 375×667 first. Tablet/desktop are adaptations.
    - Use responsive units (vh, vw, %, rem) not fixed pixels
 
-2. **No vertical scrolling per step**
-   - Each step must fully fit the viewport (including CTA) on:
+2. **Viewport-optimized steps**
+   - Each step should fit the viewport when possible, but MUST remain scrollable
+   - Target viewports:
      - iPhone SE / Mini (375×667)
      - Standard Android (360×640)
      - Desktop 1366×768
-   - Use max-height: 100vh for step containers
-   - Use overflow: hidden on step containers
+   - Use min-height: 100vh (NOT max-height!)
+   - NEVER use overflow: hidden on body or step containers
+   - Content must ALWAYS be accessible - if it doesn't fit, allow scrolling
 
 3. **Primary CTA always above the fold**
    - CTA must be visible without scrolling
@@ -122,7 +124,7 @@ export const LP_RULES = {
 
 html, body {
   height: 100%;
-  overflow: hidden; /* Prevent scrolling */
+  /* IMPORTANT: Never use overflow:hidden - it breaks mobile scrolling */
 }
 
 body {
@@ -131,15 +133,14 @@ body {
   line-height: 1.5;
 }
 
-/* Step container - full viewport, no scroll */
+/* Step container - full viewport minimum, scrollable if needed */
 .step {
   display: none;
   flex-direction: column;
   justify-content: space-between;
   min-height: 100vh;
-  max-height: 100vh;
+  /* IMPORTANT: No max-height or overflow:hidden - content must be accessible */
   padding: 20px;
-  overflow: hidden;
 }
 
 .step.active {

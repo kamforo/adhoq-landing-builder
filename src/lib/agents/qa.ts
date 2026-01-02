@@ -112,18 +112,21 @@ ${html.substring(0, 15000)}
 
 ## CHECK FOR THESE ISSUES:
 
-### CRITICAL (Page won't work):
+### CRITICAL (Page won't work or breaks on mobile):
 1. **JavaScript Errors**: Syntax errors, undefined functions, missing nextStep()
 2. **Non-clickable Buttons**: onclick not attached, wrong function names
 3. **Missing Redirect**: Final step doesn't redirect to tracking URL
 4. **Missing Steps**: Not all ${blueprint.totalSteps} steps present
 5. **Broken Flow**: Steps don't transition properly
+6. **overflow:hidden on html/body**: Prevents scrolling on mobile - CRITICAL
+7. **overflow:hidden on .step containers**: Cuts off content on mobile - CRITICAL
+8. **max-height:100vh on containers**: Cuts off content with browser chrome - CRITICAL
 
 ### MAJOR (Significantly affects UX):
-1. **Responsive Issues**: overflow:hidden on body, max-height:100vh, vw font units
-2. **Missing CTA**: No clear call-to-action button
-3. **Wrong Content**: Content doesn't match blueprint
-4. **Layout Broken**: Elements overlap, wrong positioning
+1. **Missing CTA**: No clear call-to-action button
+2. **Wrong Content**: Content doesn't match blueprint
+3. **Layout Broken**: Elements overlap, wrong positioning
+4. **vw font units**: Can cause text to be too small on mobile
 
 ### MINOR (Should fix but not blocking):
 1. **Accessibility**: Missing alt text, low contrast
@@ -167,7 +170,9 @@ IMPORTANT:
 - Check that onclick handlers actually call defined functions
 - Verify the redirect URL matches: ${blueprint.technical.trackingUrl}
 - Check for quiz steps having BOTH answer options AND separate Continue buttons (this is WRONG)
-- Verify responsive CSS rules (no overflow:hidden, no max-height:100vh, no vw fonts)
+- CRITICAL: Check CSS for overflow:hidden on html, body, or .step - mark as CRITICAL severity
+- CRITICAL: Check CSS for max-height:100vh on any container - mark as CRITICAL severity
+- These responsive issues BREAK the page on mobile and must be flagged as CRITICAL
 
 Return ONLY valid JSON.`;
 
@@ -301,28 +306,42 @@ function doBasicValidation(html: string, blueprint: LPBlueprint): QAResult {
     }
   }
 
-  // Check for responsive issues
-  if (html.includes('overflow: hidden') || html.includes('overflow:hidden')) {
-    if (html.includes('body') && html.includes('overflow')) {
-      issues.push({
-        id: 'overflow-hidden',
-        severity: 'major',
-        category: 'responsive',
-        title: 'overflow:hidden on body/container',
-        description: 'Using overflow:hidden prevents scrolling on mobile',
-        suggestedFix: 'Remove overflow:hidden from body and step containers',
-      });
-    }
+  // Check for responsive issues - these are CRITICAL because they break mobile
+  // Check for overflow:hidden on html or body (prevents scrolling)
+  const overflowPattern = /(?:html|body)\s*\{[^}]*overflow\s*:\s*hidden/gi;
+  if (overflowPattern.test(html)) {
+    issues.push({
+      id: 'overflow-hidden-body',
+      severity: 'critical',
+      category: 'responsive',
+      title: 'overflow:hidden on html/body',
+      description: 'Using overflow:hidden on html or body prevents scrolling on mobile devices',
+      suggestedFix: 'Remove overflow:hidden from html and body elements',
+    });
   }
 
+  // Check for overflow:hidden on step containers
+  const stepOverflowPattern = /\.step\s*\{[^}]*overflow\s*:\s*hidden/gi;
+  if (stepOverflowPattern.test(html)) {
+    issues.push({
+      id: 'overflow-hidden-step',
+      severity: 'critical',
+      category: 'responsive',
+      title: 'overflow:hidden on step containers',
+      description: 'Using overflow:hidden on step containers cuts off content on mobile',
+      suggestedFix: 'Remove overflow:hidden from .step containers or use overflow-x:hidden only',
+    });
+  }
+
+  // Check for max-height: 100vh (cuts off content on mobile)
   if (html.includes('max-height: 100vh') || html.includes('max-height:100vh')) {
     issues.push({
       id: 'max-height-vh',
-      severity: 'major',
+      severity: 'critical',
       category: 'responsive',
       title: 'Using max-height: 100vh',
-      description: 'max-height: 100vh cuts off content on mobile',
-      suggestedFix: 'Use min-height: 100vh instead',
+      description: 'max-height: 100vh cuts off content on mobile devices with browser chrome',
+      suggestedFix: 'Use min-height: 100vh instead, or min-height: 100dvh for modern browsers',
     });
   }
 
@@ -363,7 +382,9 @@ function doBasicValidation(html: string, blueprint: LPBlueprint): QAResult {
       hasWorkingJS: html.includes('function nextStep'),
       hasAllSteps: !issues.some(i => i.id.startsWith('missing-step')),
       hasCorrectRedirect: html.includes(blueprint.technical.trackingUrl),
-      hasResponsiveDesign: !html.includes('overflow: hidden') && !html.includes('max-height: 100vh'),
+      hasResponsiveDesign: !(/(?:html|body)\s*\{[^}]*overflow\s*:\s*hidden/gi.test(html)) &&
+        !(/\.step\s*\{[^}]*overflow\s*:\s*hidden/gi.test(html)) &&
+        !html.includes('max-height: 100vh') && !html.includes('max-height:100vh'),
       hasCTAButtons: html.includes('onclick'),
       matchesBlueprint: true, // Can't check without AI
     },

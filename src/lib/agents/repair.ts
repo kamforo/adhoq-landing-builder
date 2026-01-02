@@ -200,26 +200,39 @@ function attemptBasicRepairs(
   let fixedHtml = html;
   const fixesApplied: RepairResult['fixesApplied'] = [];
 
-  // Fix overflow:hidden
-  if (fixedHtml.includes('overflow: hidden') || fixedHtml.includes('overflow:hidden')) {
-    // Only fix on body and .step, not on other elements where it might be intentional
-    fixedHtml = fixedHtml.replace(/body\s*\{([^}]*?)overflow:\s*hidden/g, 'body {$1overflow: auto');
-    fixedHtml = fixedHtml.replace(/\.step\s*\{([^}]*?)overflow:\s*hidden/g, '.step {$1overflow: auto');
+  // Fix overflow:hidden on html/body (multi-line CSS support)
+  const htmlBodyOverflowPattern = /(html\s*,\s*body|html|body)\s*\{([^}]*?)overflow\s*:\s*hidden/gi;
+  const beforeHtmlBodyFix = fixedHtml;
+  fixedHtml = fixedHtml.replace(htmlBodyOverflowPattern, '$1 {$2/* overflow removed */');
+  if (fixedHtml !== beforeHtmlBodyFix) {
     fixesApplied.push({
-      issueId: 'overflow-hidden',
-      issueTitle: 'Fixed overflow:hidden',
-      fixDescription: 'Changed overflow:hidden to overflow:auto on body and .step',
+      issueId: 'overflow-hidden-body',
+      issueTitle: 'Removed overflow:hidden from html/body',
+      fixDescription: 'Removed overflow:hidden from html and body to allow scrolling',
       success: true,
     });
   }
 
-  // Fix max-height: 100vh
+  // Fix overflow:hidden on .step containers
+  const stepOverflowPattern = /(\.step)\s*\{([^}]*?)overflow\s*:\s*hidden/gi;
+  const beforeStepFix = fixedHtml;
+  fixedHtml = fixedHtml.replace(stepOverflowPattern, '$1 {$2/* overflow removed */');
+  if (fixedHtml !== beforeStepFix) {
+    fixesApplied.push({
+      issueId: 'overflow-hidden-step',
+      issueTitle: 'Removed overflow:hidden from .step',
+      fixDescription: 'Removed overflow:hidden from step containers to prevent content cutoff',
+      success: true,
+    });
+  }
+
+  // Fix max-height: 100vh (remove it entirely)
   if (fixedHtml.includes('max-height: 100vh') || fixedHtml.includes('max-height:100vh')) {
-    fixedHtml = fixedHtml.replace(/max-height:\s*100vh/g, 'min-height: 100vh');
+    fixedHtml = fixedHtml.replace(/max-height\s*:\s*100vh\s*;?/g, '/* max-height removed */');
     fixesApplied.push({
       issueId: 'max-height-vh',
-      issueTitle: 'Fixed max-height: 100vh',
-      fixDescription: 'Changed max-height: 100vh to min-height: 100vh',
+      issueTitle: 'Removed max-height: 100vh',
+      fixDescription: 'Removed max-height: 100vh to prevent content cutoff on mobile',
       success: true,
     });
   }
