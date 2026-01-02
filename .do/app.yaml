@@ -6,7 +6,7 @@ services:
       repo: kamforo/adhoq-landing-builder
       branch: main
       deploy_on_push: true
-    build_command: npm ci --include=dev && npm run build
+    build_command: npm ci --include=dev && npx prisma generate && npm run build
     run_command: npm start
     http_port: 3002
     instance_count: 1
