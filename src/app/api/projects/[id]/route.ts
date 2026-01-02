@@ -27,8 +27,29 @@ export async function GET(
   }
 }
 
-// PUT /api/projects/[id] - Update a project
+// PUT /api/projects/[id] - Update a project (full update)
 export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const project = await updateProject(id, body);
+
+    return NextResponse.json(project);
+  } catch (error) {
+    console.error('Failed to update project:', error);
+    return NextResponse.json(
+      { error: 'Failed to update project' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/projects/[id] - Partial update a project
+export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {

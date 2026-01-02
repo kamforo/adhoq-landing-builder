@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   UploadZone,
   ParsedSummary,
+  QuickSettings,
+  AdvancedSettings,
 } from '@/components/landing-builder';
 import {
   Dialog,
@@ -32,8 +34,23 @@ import {
   AlertTriangle,
   RefreshCw,
 } from 'lucide-react';
-import type { ParsedLandingPage } from '@/types';
+import type { ParsedLandingPage, GenerationOptions } from '@/types';
 import type { ComponentAnalysis } from '@/types/component-analysis';
+
+const DEFAULT_V3_OPTIONS: Partial<GenerationOptions> = {
+  variationCount: 1,
+  styleHandling: 'generate-new',
+  colorScheme: 'generate-matching',
+  layoutStyle: 'mobile-optimized',
+  textHandling: 'rewrite-slight',
+  linkHandling: 'replace-all',
+  vertical: 'auto',
+  tone: 'auto',
+  targetAge: 'all',
+  country: 'US',
+  language: 'en',
+  creativity: 0.7,
+};
 
 type Step = 'upload' | 'analyze' | 'architect' | 'build' | 'qa' | 'repair' | 'complete';
 type ParseInput = { type: 'url' | 'file'; value: string | File };
@@ -124,6 +141,7 @@ export default function V3BuilderPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [options, setOptions] = useState<Partial<GenerationOptions>>(DEFAULT_V3_OPTIONS);
 
   // Load project from URL
   const loadProject = useCallback(async (projectId: string) => {
@@ -133,15 +151,40 @@ export default function V3BuilderPage() {
         const data = await response.json();
         setProject(data);
 
-        // Set step based on project state
+        // Restore parsedPage from project if it has sourceHtml
         if (data.sourceHtml) {
+          setParsedPage({
+            id: data.id,
+            html: data.sourceHtml,
+            sourceUrl: data.sourceUrl || undefined,
+            title: data.name || 'Untitled',
+            parsedAt: new Date(),
+            originalSize: data.sourceHtml.length,
+            textContent: [],
+            links: [],
+            assets: [],
+            forms: [],
+            trackingCodes: [],
+          });
           setStep('analyze');
         }
+
+        // Restore analysis if available
         if (data.analysis) {
+          setAnalysis(data.analysis);
           setStep('architect');
         }
+
+        // Restore blueprint if available
         if (data.architectPlan) {
+          setBlueprint(data.architectPlan);
           setStep('build');
+        }
+
+        // Restore QA results if available
+        if (data.qaResults) {
+          setQaResults([data.qaResults]);
+          setStep('complete');
         }
       }
     } catch (error) {
@@ -160,7 +203,7 @@ export default function V3BuilderPage() {
     }
   }, [searchParams, loadProject]);
 
-  // Handle parse request
+  // Handle parse request - then auto-start generation
   const handleParse = async (input: ParseInput) => {
     setIsParsing(true);
 
@@ -201,19 +244,19 @@ export default function V3BuilderPage() {
         });
       }
 
-      setStep('analyze');
+      setIsParsing(false);
+
+      // Auto-start V3 generation after parsing
+      runV3GenerationWithPage(parsed);
     } catch (error) {
       console.error('Parse error:', error);
       alert('Failed to parse page. Please try again.');
-    } finally {
       setIsParsing(false);
     }
   };
 
-  // Run the full V3 generation workflow
-  const runV3Generation = async () => {
-    if (!parsedPage) return;
-
+  // Run the full V3 generation workflow with a specific page
+  const runV3GenerationWithPage = async (page: ParsedLandingPage) => {
     setIsGenerating(true);
     setGenerationError(null);
     setStep('analyze');
@@ -224,11 +267,8 @@ export default function V3BuilderPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourcePage: parsedPage,
-          options: {
-            variationCount: 1,
-            styleHandling: 'generate-new',
-          },
+          sourcePage: page,
+          options: options,
         }),
       });
 
@@ -239,32 +279,40 @@ export default function V3BuilderPage() {
 
       const result = await response.json();
 
-      // Update state with results
+      // Update state with results progressively
       if (result.analysis) {
         setAnalysis(result.analysis);
-        setStep('architect');
       }
+
+      // Move to architect step
+      setStep('architect');
 
       if (result.blueprint) {
         setBlueprint(result.blueprint);
-        setStep('build');
       }
+
+      // Move to build step
+      setStep('build');
 
       if (result.variations && result.variations.length > 0) {
         setVariations(result.variations);
-        setStep('qa');
       }
+
+      // Move to QA step
+      setStep('qa');
 
       if (result.qaResults) {
         setQaResults(result.qaResults);
 
-        // Check if any QA failed
-        const hasFailures = result.qaResults.some((qa: QAResultSummary) => !qa.passed);
+        // Check if any QA failed with critical issues
+        const hasFailures = result.qaResults.some((qa: QAResultSummary) => qa.criticalCount > 0);
         if (hasFailures) {
           setStep('repair');
         } else {
           setStep('complete');
         }
+      } else {
+        setStep('complete');
       }
 
       // Update project with results
@@ -284,8 +332,16 @@ export default function V3BuilderPage() {
     } catch (error) {
       console.error('V3 generation error:', error);
       setGenerationError(error instanceof Error ? error.message : 'Generation failed');
+      setStep('analyze'); // Go back to analyze on error
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // Run V3 generation with current parsedPage state
+  const runV3Generation = () => {
+    if (parsedPage) {
+      runV3GenerationWithPage(parsedPage);
     }
   };
 
@@ -482,8 +538,25 @@ export default function V3BuilderPage() {
 
         {/* Step 1: Upload */}
         {step === 'upload' && (
-          <div className="max-w-2xl mx-auto">
-            <UploadZone onParse={handleParse} isLoading={isParsing} />
+          <div className="max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left: Upload Zone */}
+              <div>
+                <UploadZone onParse={handleParse} isLoading={isParsing} />
+              </div>
+
+              {/* Right: Settings */}
+              <div className="space-y-4">
+                <QuickSettings
+                  options={options}
+                  onChange={setOptions}
+                />
+                <AdvancedSettings
+                  options={options}
+                  onChange={setOptions}
+                />
+              </div>
+            </div>
           </div>
         )}
 
