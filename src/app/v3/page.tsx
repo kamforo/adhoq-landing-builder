@@ -878,7 +878,7 @@ export default function V3BuilderPage() {
 
         {/* Step 7: Complete */}
         {step === 'complete' && (
-          <div className="max-w-2xl mx-auto">
+          <div className="max-w-4xl mx-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -886,49 +886,70 @@ export default function V3BuilderPage() {
                   Generation Complete!
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-center py-8">
-                <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-green-100 dark:bg-green-900 mb-4">
-                  <CheckCircle className="h-8 w-8 text-green-600" />
-                </div>
-                <h3 className="text-xl font-bold mb-2">Your Landing Page is Ready</h3>
-                <p className="text-muted-foreground mb-6">
-                  The V3 pipeline has successfully generated{variations[0]?.repairResult ? ' and repaired' : ''} your landing page.
-                </p>
-
-                {variations[0]?.repairResult && (
-                  <div className="mb-6 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg text-sm">
-                    <CheckCircle className="h-4 w-4 inline mr-2 text-green-600" />
-                    Fixed {variations[0].repairResult.fixedCount} issues: {variations[0].repairResult.summary}
+              <CardContent className="py-6">
+                <div className="text-center mb-6">
+                  <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-green-100 dark:bg-green-900 mb-4">
+                    <CheckCircle className="h-8 w-8 text-green-600" />
                   </div>
-                )}
+                  <h3 className="text-xl font-bold mb-2">
+                    {variations.length} Variation{variations.length > 1 ? 's' : ''} Ready
+                  </h3>
+                  <p className="text-muted-foreground">
+                    The V3 pipeline has successfully generated your landing page{variations.length > 1 ? 's' : ''}.
+                  </p>
+                </div>
 
-                <div className="flex justify-center gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (variations[0]?.html) {
-                        setPreviewHtml(variations[0].html);
-                        setPreviewOpen(true);
-                      }
-                    }}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    Preview
-                  </Button>
-                  <Button
-                    className="bg-purple-600 hover:bg-purple-700"
-                    onClick={() => {
-                      if (variations[0]?.html) {
-                        downloadHtml(
-                          variations[0].html,
-                          `${project.name.replace(/\s+/g, '-').toLowerCase()}-v3.html`
-                        );
-                      }
-                    }}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download HTML
-                  </Button>
+                {/* Variations Grid */}
+                <div className={`grid gap-4 ${variations.length > 1 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'max-w-md mx-auto'}`}>
+                  {variations.map((variation, index) => (
+                    <Card key={variation.id} className="border-2">
+                      <CardContent className="pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium">Variation {index + 1}</h4>
+                          {variation.qaResult && (
+                            <Badge variant={variation.qaResult.passed ? 'default' : 'secondary'}>
+                              QA: {variation.qaResult.score}/100
+                            </Badge>
+                          )}
+                        </div>
+
+                        {variation.repairResult && (
+                          <div className="mb-3 p-2 bg-green-50 dark:bg-green-950/20 rounded text-xs">
+                            <CheckCircle className="h-3 w-3 inline mr-1 text-green-600" />
+                            Fixed {variation.repairResult.fixedCount} issues
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => {
+                              setPreviewHtml(variation.html);
+                              setPreviewOpen(true);
+                            }}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            Preview
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-purple-600 hover:bg-purple-700"
+                            onClick={() => {
+                              downloadHtml(
+                                variation.html,
+                                `${project.name.replace(/\s+/g, '-').toLowerCase()}-v${index + 1}.html`
+                              );
+                            }}
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            Download
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </CardContent>
             </Card>
