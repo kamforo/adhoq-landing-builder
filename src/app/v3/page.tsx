@@ -441,10 +441,10 @@ function V3BuilderContent() {
         <Card className="max-w-md">
           <CardContent className="pt-6 text-center">
             <p className="text-muted-foreground mb-4">No project selected</p>
-            <Link href="/admin">
+            <Link href="/">
               <Button>
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Admin
+                Back to Dashboard
               </Button>
             </Link>
           </CardContent>
@@ -460,10 +460,10 @@ function V3BuilderContent() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/admin">
+              <Link href="/">
                 <Button variant="ghost" size="sm">
                   <ArrowLeft className="h-4 w-4 mr-2" />
-                  Admin
+                  Dashboard
                 </Button>
               </Link>
               <div>
