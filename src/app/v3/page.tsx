@@ -334,19 +334,32 @@ function V3BuilderContent() {
         setStep('complete');
       }
 
-      // Update project with results
-      if (project && result.variations?.[0]) {
+      // Update project with results and save variations
+      if (project && result.variations && result.variations.length > 0) {
+        // Update project metadata
         await fetch(`/api/projects/${project.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            status: 'completed',
-            generatedHtml: result.variations[0].html,
+            status: 'COMPLETED',
             analysis: result.analysis,
             architectPlan: result.blueprint,
             qaResults: result.qaResults?.[0],
           }),
         });
+
+        // Save each variation to the database
+        for (let i = 0; i < result.variations.length; i++) {
+          const variation = result.variations[i];
+          await fetch(`/api/projects/${project.id}/variations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              number: i + 1,
+              html: variation.html,
+            }),
+          });
+        }
       }
     } catch (error) {
       console.error('V3 generation error:', error);
