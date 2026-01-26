@@ -292,8 +292,16 @@ function V3BuilderContent() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Generation failed');
+        // Try to parse as JSON, but handle HTML error pages
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.error || 'Generation failed');
+        } else {
+          const text = await response.text();
+          console.error('Server error (non-JSON):', text.substring(0, 500));
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
       }
 
       const result = await response.json();

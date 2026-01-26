@@ -76,13 +76,14 @@ async function handleFullV3Workflow(
   sourcePage: ParsedLandingPage,
   options: Partial<GenerationOptions>
 ) {
-  console.log('=== V3 ARCHITECT WORKFLOW ===');
+  try {
+    console.log('=== V3 ARCHITECT WORKFLOW ===');
 
-  const variationCount = Math.min(options.variationCount || 1, 5);
+    const variationCount = Math.min(options.variationCount || 1, 5);
 
-  // ===== STEP 1: AI ANALYZER =====
-  console.log('\n📊 Step 1: AI Analyzer...');
-  const analysis = await analyzeWithAI(sourcePage.html, sourcePage.sourceUrl);
+    // ===== STEP 1: AI ANALYZER =====
+    console.log('\n📊 Step 1: AI Analyzer...');
+    const analysis = await analyzeWithAI(sourcePage.html, sourcePage.sourceUrl);
 
   // Apply overrides
   if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
@@ -253,6 +254,13 @@ async function handleFullV3Workflow(
       summary: qa.summary,
     })),
   });
+  } catch (error) {
+    console.error('V3 Workflow error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'V3 workflow failed' },
+      { status: 500 }
+    );
+  }
 }
 
 /**
