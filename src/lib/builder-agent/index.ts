@@ -222,6 +222,41 @@ function redirectToOffer() {
 }
 
 /**
+ * Check if a string is a valid quiz question (not a placeholder or instruction)
+ */
+function isValidQuizQuestion(text: string): boolean {
+  const lowerText = text.toLowerCase();
+
+  // Skip placeholders
+  if (/^question\s*\d*$/i.test(text)) return false;
+  if (/question\s*1234/i.test(text)) return false;
+  if (/placeholder/i.test(text)) return false;
+
+  // Skip instruction text
+  if (/^\(.*\)$/.test(text)) return false; // Text in parentheses like "(Choose up to 3 answers)"
+  if (/^choose\s/i.test(text)) return false;
+  if (/^select\s/i.test(text)) return false;
+  if (/^click\s/i.test(text)) return false;
+
+  // Skip result/completion text
+  if (/^results?$/i.test(text)) return false;
+  if (/^congratulations/i.test(text)) return false;
+  if (/^based on your answers/i.test(text)) return false;
+
+  // Skip very short text (likely not a question)
+  if (text.length < 15) return false;
+
+  // Prefer text that looks like a question (contains question words or ends with ?)
+  const isQuestion = text.includes('?') ||
+    /^(what|which|how|do you|are you|would you|have you|can you|will you)/i.test(text);
+
+  // Also accept longer descriptive text that might be a quiz prompt
+  const isDescriptive = text.length > 30 && !lowerText.includes('click') && !lowerText.includes('continue');
+
+  return isQuestion || isDescriptive;
+}
+
+/**
  * Generate a basic fallback page
  */
 function generateFallbackPage(analysis: ComponentAnalysis): string {
@@ -241,29 +276,39 @@ function generateFallbackMultiStep(analysis: ComponentAnalysis, trackingUrl: str
     c => c.role === 'engagement' || c.type === 'quiz-question'
   );
 
-  const questions: string[] = [];
+  const actualQuestions: string[] = []; // Questions ending with ?
+  const descriptiveTexts: string[] = [];  // Other valid content
+
   for (const comp of quizComponents) {
-    if (comp.content && comp.content.length > 5) {
+    if (comp.content && comp.content.length > 10) {
       // Clean up the question text
       const cleanQuestion = comp.content
         .replace(/<[^>]+>/g, '') // Remove HTML tags
         .replace(/\s+/g, ' ')    // Normalize whitespace
         .trim();
-      if (cleanQuestion.length > 5 && !questions.includes(cleanQuestion)) {
-        questions.push(cleanQuestion);
+
+      // Skip if it's a placeholder, instruction, or not valid
+      if (!isValidQuizQuestion(cleanQuestion)) continue;
+      if (actualQuestions.includes(cleanQuestion) || descriptiveTexts.includes(cleanQuestion)) continue;
+
+      // Prioritize actual questions (end with ? or start with question words)
+      if (cleanQuestion.includes('?') || /^(what|which|how|do you|are you|would you)/i.test(cleanQuestion)) {
+        actualQuestions.push(cleanQuestion);
+      } else {
+        descriptiveTexts.push(cleanQuestion);
       }
     }
   }
 
-  // Limit to 5 questions max
-  const finalQuestions = questions.slice(0, 5);
+  // Prefer actual questions, then fill with descriptive texts
+  const finalQuestions = [...actualQuestions, ...descriptiveTexts].slice(0, 5);
 
   // Only use defaults if we found absolutely nothing
   if (finalQuestions.length === 0) {
-    console.log('[Builder Fallback] No quiz questions found in analysis, using defaults');
+    console.log('[Builder Fallback] No valid quiz questions found, using defaults');
     finalQuestions.push('Are you over 18?', 'Are you looking to meet someone?', 'Are you ready to start?');
   } else {
-    console.log(`[Builder Fallback] Using ${finalQuestions.length} extracted quiz questions`);
+    console.log(`[Builder Fallback] Using ${finalQuestions.length} extracted quiz questions:`, finalQuestions);
   }
 
   const questionsJs = finalQuestions.map((q, i) => `{ question: "${q.replace(/"/g, '\\"')}", type: "yesno" }`).join(',\n    ');
