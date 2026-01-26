@@ -236,16 +236,37 @@ function generateFallbackPage(analysis: ComponentAnalysis): string {
 }
 
 function generateFallbackMultiStep(analysis: ComponentAnalysis, trackingUrl: string): string {
-  const questions = analysis.components
-    .filter(c => c.role === 'engagement' || c.type === 'quiz-question')
-    .map(c => c.content)
-    .slice(0, 5);
+  // Extract quiz questions from components (now includes JS-extracted questions)
+  const quizComponents = analysis.components.filter(
+    c => c.role === 'engagement' || c.type === 'quiz-question'
+  );
 
-  if (questions.length === 0) {
-    questions.push('Are you over 18?', 'Are you looking to meet someone?', 'Are you ready to start?');
+  const questions: string[] = [];
+  for (const comp of quizComponents) {
+    if (comp.content && comp.content.length > 5) {
+      // Clean up the question text
+      const cleanQuestion = comp.content
+        .replace(/<[^>]+>/g, '') // Remove HTML tags
+        .replace(/\s+/g, ' ')    // Normalize whitespace
+        .trim();
+      if (cleanQuestion.length > 5 && !questions.includes(cleanQuestion)) {
+        questions.push(cleanQuestion);
+      }
+    }
   }
 
-  const questionsJs = questions.map((q, i) => `{ question: "${q.replace(/"/g, '\\"')}", type: "yesno" }`).join(',\n    ');
+  // Limit to 5 questions max
+  const finalQuestions = questions.slice(0, 5);
+
+  // Only use defaults if we found absolutely nothing
+  if (finalQuestions.length === 0) {
+    console.log('[Builder Fallback] No quiz questions found in analysis, using defaults');
+    finalQuestions.push('Are you over 18?', 'Are you looking to meet someone?', 'Are you ready to start?');
+  } else {
+    console.log(`[Builder Fallback] Using ${finalQuestions.length} extracted quiz questions`);
+  }
+
+  const questionsJs = finalQuestions.map((q, i) => `{ question: "${q.replace(/"/g, '\\"')}", type: "yesno" }`).join(',\n    ');
 
   return `<!DOCTYPE html>
 <html lang="en">

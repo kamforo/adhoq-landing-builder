@@ -160,9 +160,14 @@ function extractRawData($: cheerio.CheerioAPI) {
     }
   });
 
-  // Detect if multi-step (JS-based)
+  // Extract all JavaScript content
   const jsContent = $('script').text();
+
+  // Detect if multi-step (JS-based)
   const isMultiStep = /step|question|quiz|slide|activeIndex|currentStep|showStep|nextStep/i.test(jsContent);
+
+  // Extract quiz questions from JavaScript
+  const jsQuizData = extractQuizDataFromJS(jsContent);
 
   return {
     headlines,
@@ -174,7 +179,134 @@ function extractRawData($: cheerio.CheerioAPI) {
     lists,
     isMultiStep,
     jsContent: jsContent.slice(0, 2000), // First 2000 chars for context
+    jsQuizData, // Extracted quiz questions and answers from JS
   };
+}
+
+/**
+ * Extract quiz questions and answers from JavaScript code
+ * Parses common patterns used in landing page quizzes
+ */
+function extractQuizDataFromJS(jsContent: string): {
+  questions: Array<{ question: string; answers: string[] }>;
+  titles: string[];
+  hookTexts: string[];
+} {
+  const questions: Array<{ question: string; answers: string[] }> = [];
+  const titles: string[] = [];
+  const hookTexts: string[] = [];
+
+  // Pattern 1: Question objects with question/Question property
+  // e.g., {question:"What type of body turns you on?", answerList:[...]}
+  const questionObjectPattern = /\{[^{}]*(?:question|Question)\s*:\s*["'`]([^"'`]+)["'`][^{}]*\}/g;
+  let match;
+  while ((match = questionObjectPattern.exec(jsContent)) !== null) {
+    const questionText = match[1].trim();
+    if (questionText.length > 10 && !questions.some(q => q.question === questionText)) {
+      // Try to extract answers from the same object
+      const fullMatch = match[0];
+      const answers: string[] = [];
+
+      // Look for answerList, options, choices patterns
+      const answerPatterns = [
+        /answerList\s*:\s*\[([\s\S]*?)\]/,
+        /options\s*:\s*\[([\s\S]*?)\]/,
+        /choices\s*:\s*\[([\s\S]*?)\]/,
+        /answers\s*:\s*\[([\s\S]*?)\]/,
+      ];
+
+      for (const answerPattern of answerPatterns) {
+        const answerMatch = fullMatch.match(answerPattern);
+        if (answerMatch) {
+          // Extract answer names/texts
+          const answerNamePattern = /(?:name|text|label|LangName)\s*:\s*["'`]([^"'`]+)["'`]/g;
+          let answerName;
+          while ((answerName = answerNamePattern.exec(answerMatch[1])) !== null) {
+            if (!answers.includes(answerName[1])) {
+              answers.push(answerName[1]);
+            }
+          }
+          break;
+        }
+      }
+
+      questions.push({ question: questionText, answers });
+    }
+  }
+
+  // Pattern 2: Array of question strings
+  // e.g., questions = ["Question 1?", "Question 2?"]
+  const questionArrayPattern = /(?:questions?|quizQuestions?)\s*=\s*\[([^\]]+)\]/gi;
+  while ((match = questionArrayPattern.exec(jsContent)) !== null) {
+    const arrayContent = match[1];
+    const stringPattern = /["'`]([^"'`]+\??)["'`]/g;
+    let strMatch;
+    while ((strMatch = stringPattern.exec(arrayContent)) !== null) {
+      const text = strMatch[1].trim();
+      if (text.length > 10 && text.includes('?') && !questions.some(q => q.question === text)) {
+        questions.push({ question: text, answers: [] });
+      }
+    }
+  }
+
+  // Pattern 3: Title/headline assignments
+  // e.g., title:"Important", landingPageContent="..."
+  const titlePatterns = [
+    /(?:title|headline|mainTitle|pageTitle)\s*[=:]\s*["'`]([^"'`]+)["'`]/gi,
+    /landingPageContent\w*\s*=\s*["'`]([^"'`]+)["'`]/gi,
+  ];
+
+  for (const pattern of titlePatterns) {
+    while ((match = pattern.exec(jsContent)) !== null) {
+      const text = match[1].trim();
+      if (text.length > 3 && text.length < 200 && !titles.includes(text)) {
+        titles.push(text);
+      }
+    }
+  }
+
+  // Pattern 4: Hook/intro text - longer descriptive text
+  // e.g., "Before we can show you a list..."
+  const hookPattern = /(?:description|intro|hookText|message)\s*[=:]\s*["'`]([^"'`]{30,})["'`]/gi;
+  while ((match = hookPattern.exec(jsContent)) !== null) {
+    const text = match[1].trim().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    if (text.length > 30 && !hookTexts.includes(text)) {
+      hookTexts.push(text);
+    }
+  }
+
+  // Pattern 5: innerHTML assignments with question content
+  const innerHtmlPattern = /getElementById\s*\(\s*["'`](?:actualQuestion|question|questionText)["'`]\s*\)[^=]*=\s*["'`]([^"'`]+)["'`]/gi;
+  while ((match = innerHtmlPattern.exec(jsContent)) !== null) {
+    const text = match[1].trim().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    if (text.length > 10) {
+      hookTexts.push(text);
+    }
+  }
+
+  // Pattern 6: Look for question list variable definitions
+  // e.g., var questionListForSecondModal = [{...}, {...}]
+  const questionListPattern = /(?:var|let|const)\s+\w*(?:question|quiz|step)\w*\s*=\s*\[([\s\S]*?)\];/gi;
+  while ((match = questionListPattern.exec(jsContent)) !== null) {
+    const listContent = match[1];
+    // Extract questions from the list
+    const objQuestionPattern = /(?:englishQuestion|question|Question|text)\s*:\s*["'`]([^"'`]+)["'`]/g;
+    let qMatch;
+    while ((qMatch = objQuestionPattern.exec(listContent)) !== null) {
+      const questionText = qMatch[1].trim();
+      if (questionText.length > 10 && !questions.some(q => q.question === questionText)) {
+        questions.push({ question: questionText, answers: [] });
+      }
+    }
+  }
+
+  console.log('[JS Parser] Extracted from JavaScript:', {
+    questions: questions.length,
+    titles: titles.length,
+    hookTexts: hookTexts.length,
+  });
+
+  return { questions, titles, hookTexts };
 }
 
 /**
@@ -238,6 +370,25 @@ async function getAIAnalysis(
   tone: LPTone;
   strategySummary: ComponentAnalysis['strategySummary'];
 }> {
+  // Format JS-extracted quiz data for the prompt
+  const jsQuizSection = rawData.jsQuizData.questions.length > 0 ? `
+**Quiz Questions (extracted from JavaScript):**
+${rawData.jsQuizData.questions.map((q, i) => {
+  const answersStr = q.answers.length > 0 ? ` [Answers: ${q.answers.join(', ')}]` : '';
+  return `${i + 1}. "${q.question}"${answersStr}`;
+}).join('\n')}
+` : '';
+
+  const jsTitlesSection = rawData.jsQuizData.titles.length > 0 ? `
+**Titles (from JavaScript):**
+${rawData.jsQuizData.titles.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+` : '';
+
+  const jsHooksSection = rawData.jsQuizData.hookTexts.length > 0 ? `
+**Hook/Intro Texts (from JavaScript):**
+${rawData.jsQuizData.hookTexts.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+` : '';
+
   const prompt = `You are an expert landing page analyst specializing in high-converting dating/adult funnels.
 
 Analyze this landing page and break down each component with its role and importance.
@@ -245,7 +396,7 @@ Analyze this landing page and break down each component with its role and import
 ## RAW DATA EXTRACTED:
 
 **Headlines:**
-${rawData.headlines.map((h, i) => `${i + 1}. "${h}"`).join('\n')}
+${rawData.headlines.length > 0 ? rawData.headlines.map((h, i) => `${i + 1}. "${h}"`).join('\n') : '(none found in static HTML)'}
 
 **Buttons/CTAs:**
 ${rawData.buttons.map((b, i) => `${i + 1}. "${b}"`).join('\n')}
@@ -261,7 +412,7 @@ ${rawData.paragraphs.slice(0, 3).join('\n')}
 
 **Lists:**
 ${rawData.lists.slice(0, 2).join('\n')}
-
+${jsQuizSection}${jsTitlesSection}${jsHooksSection}
 **Is Multi-Step:** ${rawData.isMultiStep ? 'Yes (JS-driven quiz/funnel)' : 'No (static page)'}
 
 ## ANALYSIS REQUIRED:
@@ -470,8 +621,12 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
   const components: AnalyzedComponent[] = [];
   let position = 1;
 
-  // Add headlines
-  rawData.headlines.forEach((h, i) => {
+  // Add headlines (prefer JS-extracted titles if HTML headlines are empty)
+  const headlines = rawData.headlines.length > 0
+    ? rawData.headlines
+    : rawData.jsQuizData.titles;
+
+  headlines.forEach((h, i) => {
     components.push({
       id: `headline-${i}`,
       type: i === 0 ? 'headline' : 'subheadline',
@@ -481,6 +636,36 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
       persuasionTechniques: ['curiosity'],
       position: position++,
       notes: i === 0 ? 'Main headline to grab attention' : 'Supporting headline',
+    });
+  });
+
+  // Add JS-extracted quiz questions as components
+  rawData.jsQuizData.questions.forEach((q, i) => {
+    components.push({
+      id: `quiz-question-${i}`,
+      type: 'quiz-question',
+      content: q.question,
+      role: 'engagement',
+      importance: 'important',
+      persuasionTechniques: ['commitment-consistency', 'curiosity'],
+      position: position++,
+      notes: q.answers.length > 0
+        ? `Quiz question with answers: ${q.answers.join(', ')}`
+        : 'Quiz question for user engagement',
+    });
+  });
+
+  // Add hook texts as body-text components
+  rawData.jsQuizData.hookTexts.forEach((h, i) => {
+    components.push({
+      id: `hook-text-${i}`,
+      type: 'body-text',
+      content: h,
+      role: i === 0 ? 'attention-grabber' : 'desire-creator',
+      importance: i === 0 ? 'critical' : 'important',
+      persuasionTechniques: ['curiosity', 'personalization'],
+      position: position++,
+      notes: 'Hook/intro text to engage visitors',
     });
   });
 
@@ -498,24 +683,37 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
     });
   });
 
-  // Detect vertical from content
-  const allText = [...rawData.headlines, ...rawData.buttons, ...rawData.paragraphs].join(' ').toLowerCase();
+  // Detect vertical from content (include JS-extracted content)
+  const jsQuestionText = rawData.jsQuizData.questions.map(q => q.question).join(' ');
+  const jsHookText = rawData.jsQuizData.hookTexts.join(' ');
+  const allText = [...rawData.headlines, ...rawData.buttons, ...rawData.paragraphs, jsQuestionText, jsHookText].join(' ').toLowerCase();
+
   let vertical: DatingVertical = 'casual';
-  if (/hookup|nsa|affair|milf|cougar|sex|fuck|horny|nude/i.test(allText)) {
+  if (/hookup|nsa|affair|milf|cougar|sex|fuck|horny|nude|discreet/i.test(allText)) {
     vertical = 'adult';
   } else if (/love|relationship|soulmate|marriage|serious|meaningful/i.test(allText)) {
     vertical = 'mainstream';
   }
 
-  // Generate default sections based on step count
-  const totalSteps = rawData.isMultiStep ? Math.max(rawData.headlines.length, 3) : 1;
+  // Calculate total steps based on JS quiz questions
+  const jsQuestionCount = rawData.jsQuizData.questions.length;
+  const totalSteps = rawData.isMultiStep
+    ? Math.max(jsQuestionCount + 2, rawData.headlines.length, 3) // +2 for hook and CTA
+    : 1;
+
   const sections: DetectedSection[] = rawData.isMultiStep ? [
     { type: 'hook', stepNumbers: [1], description: 'Initial hook with headline', components: [] },
-    { type: 'quiz', stepNumbers: Array.from({ length: totalSteps - 2 }, (_, i) => i + 2), description: 'Quiz questions', components: [] },
+    { type: 'quiz', stepNumbers: Array.from({ length: Math.max(totalSteps - 2, 1) }, (_, i) => i + 2), description: 'Quiz questions', components: [] },
     { type: 'cta', stepNumbers: [totalSteps], description: 'Final CTA', components: [] },
   ] : [
     { type: 'hook', stepNumbers: [1], description: 'Single page with hook and CTA', components: [] },
   ];
+
+  // Determine main hook from available content
+  const mainHook = rawData.headlines[0]
+    || rawData.jsQuizData.titles[0]
+    || rawData.jsQuizData.hookTexts[0]?.slice(0, 50)
+    || 'Find matches';
 
   return {
     components,
@@ -528,8 +726,8 @@ function getFallbackAnalysis(rawData: ReturnType<typeof extractRawData>): {
     vertical,
     tone: 'playful-seductive',
     strategySummary: {
-      mainHook: rawData.headlines[0] || 'Find matches',
-      valueProposition: 'Connect with local singles',
+      mainHook,
+      valueProposition: rawData.jsQuizData.hookTexts[0]?.slice(0, 100) || 'Connect with local singles',
       conversionMechanism: rawData.isMultiStep ? 'Quiz funnel' : 'Direct CTA',
       keyPersuasionTactics: ['curiosity', 'locality'],
     },
