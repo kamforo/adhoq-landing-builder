@@ -119,6 +119,9 @@ Generate ONLY the complete HTML code.
       }
     }
 
+    // Replace common placeholders the AI might leave in
+    html = replacePlaceholders(html);
+
     return {
       id: `build-${Date.now()}`,
       html,
@@ -408,4 +411,53 @@ function generateFallbackSinglePage(analysis: ComponentAnalysis, trackingUrl: st
   </div>
 </body>
 </html>`;
+}
+
+/**
+ * Replace common AI placeholders with realistic values
+ */
+function replacePlaceholders(html: string): string {
+  // Generate random but realistic numbers
+  const getRandomNumber = (min: number, max: number) =>
+    Math.floor(Math.random() * (max - min + 1)) + min;
+
+  // Replace [X] or [NUMBER] with realistic counts (common for "X women near you")
+  html = html.replace(/\[X\]/gi, String(getRandomNumber(23, 156)));
+  html = html.replace(/\[NUMBER\]/gi, String(getRandomNumber(15, 89)));
+
+  // Replace [N] patterns (single letter placeholders)
+  html = html.replace(/\[N\]/gi, String(getRandomNumber(10, 50)));
+
+  // Replace percentage placeholders
+  html = html.replace(/\[%\]/gi, String(getRandomNumber(73, 97)) + '%');
+  html = html.replace(/\[PERCENT\]/gi, String(getRandomNumber(73, 97)) + '%');
+
+  // Replace location placeholders with generic terms
+  html = html.replace(/\[CITY\]/gi, 'your area');
+  html = html.replace(/\[LOCATION\]/gi, 'your area');
+  html = html.replace(/\[AREA\]/gi, 'nearby');
+
+  // Replace time-based placeholders
+  html = html.replace(/\[TIME\]/gi, 'today');
+  html = html.replace(/\[DATE\]/gi, 'today');
+  html = html.replace(/\[MINUTES\]/gi, String(getRandomNumber(2, 5)) + ' minutes');
+
+  // Replace name placeholders
+  html = html.replace(/\[NAME\]/gi, 'someone special');
+  html = html.replace(/\[USER\]/gi, 'you');
+
+  // Replace distance placeholders
+  html = html.replace(/\[DISTANCE\]/gi, String(getRandomNumber(1, 10)) + ' miles');
+  html = html.replace(/\[MILES\]/gi, String(getRandomNumber(2, 15)));
+
+  // Replace count placeholders with realistic member counts
+  html = html.replace(/\[COUNT\]/gi, String(getRandomNumber(1200, 4500)));
+  html = html.replace(/\[MEMBERS\]/gi, String(getRandomNumber(2300, 8900)));
+
+  // Replace generic placeholders
+  html = html.replace(/\[INSERT[^\]]*\]/gi, '');
+  html = html.replace(/\[PLACEHOLDER[^\]]*\]/gi, '');
+  html = html.replace(/\[YOUR[^\]]*\]/gi, 'your');
+
+  return html;
 }
