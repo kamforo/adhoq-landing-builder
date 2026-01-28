@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Adhoq Landing Page Builder
 
-## Getting Started
+AI-powered tool that generates high-converting landing page variations for dating verticals. Uses multi-agent AI workflows to analyze, plan, build, and validate landing pages.
 
-First, run the development server:
+## Pipelines
+
+**V1 (Classic)**: Analyzer → Prompt Writer → Builder → Output
+**V3 (Architect)**: Analyzer → Architect → Builder → QA → Repair → Output
+
+## Tech Stack
+
+- **Framework**: Next.js 16.1.1 (App Router, React 19, TypeScript)
+- **Database**: PostgreSQL (Supabase) via Prisma 7.2
+- **AI**: Grok (x.ai) for generation, OpenAI (gpt-4o) for QA
+- **UI**: shadcn/ui + Tailwind CSS 4
+- **Deployment**: DigitalOcean App Platform
+
+## Quick Start
 
 ```bash
+# Install dependencies
+npm install
+
+# Set up environment
+cp .env.example .env.local
+# Edit .env.local with your credentials
+
+# Setup database
+npx prisma generate
+npx prisma db push
+
+# Start dev server (port 3002)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3002](http://localhost:3002).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+GROK_API_KEY=          # Required: x.ai API key
+OPENAI_API_KEY=        # Required for V3 QA agent
+DATABASE_URL=          # Supabase pooler (port 6543)
+DIRECT_URL=            # Supabase direct (port 5432, migrations)
+```
 
-## Learn More
+## Documentation
 
-To learn more about Next.js, take a look at the following resources:
+- [CLAUDE.md](./CLAUDE.md) - AI assistant context for working on this codebase
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture and data flow
+- [AGENTS.md](./AGENTS.md) - Development agent definitions for future work
+- [ROADMAP.md](./ROADMAP.md) - Feature roadmap and progress tracking
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+├── app/                  # Pages + API routes
+│   ├── page.tsx          # Admin dashboard
+│   ├── builder/          # V1 builder UI
+│   ├── v3/              # V3 builder UI
+│   └── api/             # 16 API endpoints
+├── components/
+│   ├── ui/              # shadcn/ui (15)
+│   └── landing-builder/ # Custom (12)
+├── lib/
+│   ├── agents/          # V3 agents (architect, qa, repair)
+│   ├── analyzer/        # Page analysis (6 modules)
+│   ├── builder-agent/   # HTML builder + LP rules
+│   ├── prompt-writer/   # Prompt engineering
+│   ├── parser/          # URL/file parsing (7 modules)
+│   ├── generator/       # Variation generation
+│   ├── llm/             # LLM abstraction (Grok, extensible)
+│   ├── output/          # ZIP/file storage
+│   └── db/              # Prisma client + queries
+└── types/               # TypeScript type definitions (8 files)
+```
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev       # Development server (port 3002)
+npm run build     # Production build
+npm run start     # Production server
+npm run lint      # ESLint
+```
