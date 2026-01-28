@@ -142,7 +142,14 @@ export async function deleteProject(id: string) {
 }
 
 // Duplicate a project
-export async function duplicateProject(id: string, newName?: string) {
+export async function duplicateProject(
+  id: string,
+  newName?: string,
+  overrides?: {
+    options?: Prisma.InputJsonValue;
+    skipVariations?: boolean;
+  }
+) {
   const original = await prisma.project.findUnique({
     where: { id },
     include: { variations: true },
@@ -163,7 +170,7 @@ export async function duplicateProject(id: string, newName?: string) {
       vertical: original.vertical,
       language: original.language,
       country: original.country,
-      options: original.options || {},
+      options: overrides?.options ?? original.options ?? {},
       analysis: original.analysis || undefined,
       folder: original.folder,
       tags: original.tags,
@@ -173,8 +180,8 @@ export async function duplicateProject(id: string, newName?: string) {
     },
   });
 
-  // Copy variations
-  if (original.variations.length > 0) {
+  // Copy variations (unless skipped)
+  if (!overrides?.skipVariations && original.variations.length > 0) {
     await prisma.variation.createMany({
       data: original.variations.map((v) => ({
         projectId: duplicate.id,

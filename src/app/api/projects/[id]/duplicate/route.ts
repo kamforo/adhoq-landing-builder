@@ -8,9 +8,12 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    const newName = body.name;
+    const { name, options, skipVariations } = body;
 
-    const project = await duplicateProject(id, newName);
+    const project = await duplicateProject(id, name, {
+      options,
+      skipVariations,
+    });
     return NextResponse.json(project);
   } catch (error) {
     console.error('Failed to duplicate project:', error);

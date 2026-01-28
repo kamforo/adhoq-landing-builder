@@ -37,8 +37,12 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  Copy,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { QuickSettings, AdvancedSettings } from '@/components/landing-builder';
+import { COUNTRIES, LANGUAGES } from '@/types/languages';
+import type { GenerationOptions } from '@/types';
 
 type Variation = {
   id: string;
@@ -51,11 +55,13 @@ type Project = {
   id: string;
   name: string;
   status: 'DRAFT' | 'GENERATING' | 'COMPLETED' | 'FAILED' | 'ARCHIVED';
+  pipelineVersion: string;
   vertical: string | null;
   language: string;
   country: string;
   sourceUrl: string | null;
   trackingUrl: string | null;
+  options: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   variations: Variation[];
@@ -104,6 +110,15 @@ export default function AdminDashboard() {
   // Preview modal state
   const [previewProject, setPreviewProject] = useState<Project | null>(null);
   const [previewVariationIndex, setPreviewVariationIndex] = useState(0);
+
+  // View Settings dialog state
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
+
+  // Clone with New Settings dialog state
+  const [cloneProject, setCloneProject] = useState<Project | null>(null);
+  const [cloneOptions, setCloneOptions] = useState<Partial<GenerationOptions>>({});
+  const [cloneName, setCloneName] = useState('');
+  const [isCloning, setIsCloning] = useState(false);
 
   // Ref to track projects for polling without causing re-renders
   const projectsRef = useRef(projects);
@@ -355,6 +370,67 @@ export default function AdminDashboard() {
   const prevVariation = () => {
     if (previewVariationIndex > 0) {
       setPreviewVariationIndex(prev => prev - 1);
+    }
+  };
+
+  // Open View Settings dialog
+  const handleViewSettings = async (project: Project) => {
+    // If the project doesn't have options loaded, fetch the full project
+    if (project.options === null || project.options === undefined) {
+      try {
+        const response = await fetch(`/api/projects/${project.id}`);
+        if (response.ok) {
+          const fullProject = await response.json();
+          setSettingsProject({ ...project, options: fullProject.options, pipelineVersion: fullProject.pipelineVersion });
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to fetch project details:', error);
+      }
+    }
+    setSettingsProject(project);
+  };
+
+  // Open Clone with New Settings dialog
+  const handleOpenClone = (project: Project) => {
+    setSettingsProject(null); // Close settings dialog if open
+    const projectOptions = (project.options || {}) as Partial<GenerationOptions>;
+    setCloneOptions({
+      ...projectOptions,
+      // Ensure key fields are populated from project-level fields if not in options
+      language: projectOptions.language || project.language as GenerationOptions['language'],
+      country: (projectOptions.country || project.country) as GenerationOptions['country'],
+      vertical: (projectOptions.vertical || project.vertical || 'auto') as GenerationOptions['vertical'],
+    });
+    setCloneName(`${project.name} (Clone)`);
+    setCloneProject(project);
+  };
+
+  // Submit clone
+  const handleCloneSubmit = async () => {
+    if (!cloneProject || !cloneName.trim()) return;
+
+    setIsCloning(true);
+    try {
+      const response = await fetch(`/api/projects/${cloneProject.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cloneName.trim(),
+          options: cloneOptions,
+          skipVariations: true,
+        }),
+      });
+
+      if (response.ok) {
+        const newProject = await response.json();
+        setCloneProject(null);
+        router.push(`/v3?project=${newProject.id}`);
+      }
+    } catch (error) {
+      console.error('Failed to clone project:', error);
+    } finally {
+      setIsCloning(false);
     }
   };
 
@@ -716,17 +792,15 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {project.status === 'DRAFT' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => router.push(`/?project=${project.id}`)}
-                                title="Configure"
-                              >
-                                <Settings className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleViewSettings(project)}
+                              title="View Settings"
+                            >
+                              <Settings className="h-4 w-4" />
+                            </Button>
                             {project.variations && project.variations.length > 0 && (
                               <>
                                 <Button
@@ -969,6 +1043,231 @@ export default function AdminDashboard() {
                   title="Preview"
                   sandbox="allow-scripts"
                 />
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Settings Dialog */}
+      <Dialog open={!!settingsProject} onOpenChange={(open) => !open && setSettingsProject(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          {settingsProject && (() => {
+            const opts = (settingsProject.options || {}) as Record<string, unknown>;
+            const hasOptions = Object.keys(opts).length > 0;
+
+            return (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg font-semibold">{settingsProject.name}</h2>
+                  <p className="text-sm text-muted-foreground">Generation settings</p>
+                </div>
+
+                {!hasOptions ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Settings className="h-8 w-8 mx-auto mb-3 opacity-40" />
+                    <p>No settings saved for this project.</p>
+                    <p className="text-xs mt-1">Settings are saved when generating with V3.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {/* Pipeline */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pipeline</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-muted-foreground">Version</div>
+                        <div className="font-medium">{settingsProject.pipelineVersion || 'v1'}</div>
+                      </div>
+                    </div>
+
+                    {/* Source */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Source</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {settingsProject.sourceUrl && (
+                          <>
+                            <div className="text-muted-foreground">Source URL</div>
+                            <div className="font-medium truncate" title={settingsProject.sourceUrl}>{settingsProject.sourceUrl}</div>
+                          </>
+                        )}
+                        {!!(opts.ctaUrlOverride || settingsProject.trackingUrl) && (
+                          <>
+                            <div className="text-muted-foreground">Tracking URL</div>
+                            <div className="font-medium truncate" title={String(opts.ctaUrlOverride || settingsProject.trackingUrl)}>
+                              {String(opts.ctaUrlOverride || settingsProject.trackingUrl)}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Targeting */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Targeting</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-muted-foreground">Vertical</div>
+                        <div className="font-medium capitalize">{String(opts.vertical || settingsProject.vertical || 'auto')}</div>
+                        <div className="text-muted-foreground">Tone</div>
+                        <div className="font-medium capitalize">{String(opts.tone || 'auto').replace(/-/g, ' ')}</div>
+                        <div className="text-muted-foreground">Target Age</div>
+                        <div className="font-medium">{String(opts.targetAge || 'all') === 'all' ? 'All Ages (18+)' : String(opts.targetAge)}</div>
+                        <div className="text-muted-foreground">Country</div>
+                        <div className="font-medium">
+                          {(() => {
+                            const code = String(opts.country || settingsProject.country || 'US');
+                            const country = COUNTRIES[code as keyof typeof COUNTRIES];
+                            return country ? `${country.flag} ${country.name}` : code;
+                          })()}
+                        </div>
+                        <div className="text-muted-foreground">Language</div>
+                        <div className="font-medium">
+                          {(() => {
+                            const code = String(opts.language || settingsProject.language || 'en');
+                            const lang = LANGUAGES[code as keyof typeof LANGUAGES];
+                            return lang ? lang.nativeName : code.toUpperCase();
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Generation */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Generation</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {!!opts.stepCount && (
+                          <>
+                            <div className="text-muted-foreground">Steps</div>
+                            <div className="font-medium">{String(opts.stepCount)}</div>
+                          </>
+                        )}
+                        <div className="text-muted-foreground">Variations</div>
+                        <div className="font-medium">{String(opts.variationCount || 1)}</div>
+                        <div className="text-muted-foreground">Creativity</div>
+                        <div className="font-medium">{String(opts.creativity || 0.7)}</div>
+                      </div>
+                    </div>
+
+                    {/* Style */}
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Style</h3>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-muted-foreground">Color Scheme</div>
+                        <div className="font-medium capitalize">{String(opts.colorScheme || 'generate-matching').replace(/-/g, ' ')}</div>
+                        <div className="text-muted-foreground">Layout</div>
+                        <div className="font-medium capitalize">{String(opts.layoutStyle || 'mobile-optimized').replace(/-/g, ' ')}</div>
+                        <div className="text-muted-foreground">Text Handling</div>
+                        <div className="font-medium capitalize">{String(opts.textHandling || 'rewrite-slight').replace(/-/g, ' ')}</div>
+                        <div className="text-muted-foreground">Link Handling</div>
+                        <div className="font-medium capitalize">{String(opts.linkHandling || 'replace-all').replace(/-/g, ' ')}</div>
+                      </div>
+                    </div>
+
+                    {/* Custom Instructions */}
+                    {!!opts.textInstructions && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Custom Instructions</h3>
+                        <p className="text-sm bg-muted/50 p-3 rounded-lg">{String(opts.textInstructions)}</p>
+                      </div>
+                    )}
+
+                    {/* Add Elements */}
+                    {!!(opts.addElements && typeof opts.addElements === 'object') && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Added Elements</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {(opts.addElements as Record<string, { enabled?: boolean }>).countdown?.enabled && (
+                            <Badge variant="secondary">Countdown Timer</Badge>
+                          )}
+                          {(opts.addElements as Record<string, { enabled?: boolean }>).scarcity?.enabled && (
+                            <Badge variant="secondary">Scarcity Indicator</Badge>
+                          )}
+                          {(opts.addElements as Record<string, { enabled?: boolean }>).socialProof?.enabled && (
+                            <Badge variant="secondary">Social Proof</Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Clone button */}
+                <div className="pt-2 border-t">
+                  <Button
+                    className="w-full"
+                    onClick={() => handleOpenClone(settingsProject)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Clone with New Settings
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Clone with New Settings Dialog */}
+      <Dialog open={!!cloneProject} onOpenChange={(open) => !open && setCloneProject(null)}>
+        <DialogContent className="max-w-5xl h-[90vh] p-0 flex flex-col">
+          {cloneProject && (
+            <>
+              <div className="p-6 border-b bg-background">
+                <h2 className="text-lg font-semibold">Clone with New Settings</h2>
+                <p className="text-sm text-muted-foreground">
+                  Source: {cloneProject.name}
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {/* Project Name */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Project Name</label>
+                    <Input
+                      value={cloneName}
+                      onChange={e => setCloneName(e.target.value)}
+                      placeholder="New project name"
+                    />
+                  </div>
+
+                  {/* Settings */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <QuickSettings
+                      options={cloneOptions}
+                      onChange={setCloneOptions}
+                    />
+                    <AdvancedSettings
+                      options={cloneOptions}
+                      onChange={setCloneOptions}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-t bg-background flex items-center justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setCloneProject(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCloneSubmit}
+                  disabled={isCloning || !cloneName.trim()}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {isCloning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Cloning...
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Clone & Open in Builder
+                    </>
+                  )}
+                </Button>
               </div>
             </>
           )}

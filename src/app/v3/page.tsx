@@ -281,6 +281,21 @@ function V3BuilderContent() {
     setStep('analyze');
 
     try {
+      // Save generation options to the project
+      if (project) {
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            options,
+            trackingUrl: options.ctaUrlOverride || undefined,
+            vertical: options.vertical,
+            language: options.language,
+            country: options.country,
+          }),
+        });
+      }
+
       // Call V3 API which runs the full workflow
       const response = await fetch('/api/v3/generate', {
         method: 'POST',
