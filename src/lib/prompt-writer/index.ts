@@ -510,7 +510,7 @@ ${stringify(parts.technicalRequirements)}
 
 ${analysis.originalImages.length > 0
   ? `Use these images from the original:\n${analysis.originalImages.slice(0, 5).map(img => `- ${img}`).join('\n')}`
-  : 'Use appropriate placeholder images for the vertical'}
+  : 'NO IMAGES AVAILABLE — Do NOT use any <img> tags or image URLs. Design the page using colors, gradients, and typography only. No placeholder or stock images.'}
 
 ## OUTPUT
 
@@ -523,7 +523,7 @@ Generate a complete, single HTML file with:
 ## CRITICAL RULES (DO NOT IGNORE)
 
 **Structure Rules:**
-1. HOOK section (Step 1): Hero image + headline + single Continue button
+1. HOOK section (Step 1): ${analysis.originalImages.length > 0 ? 'Hero image + headline' : 'Headline (no images available)'} + single Continue button
 2. QUIZ sections: Answer options ONLY - NO separate Continue/Next button when answers advance
 3. CTA section (Final Step): ONE final step only, with conversion elements and final CTA
 
@@ -536,8 +536,12 @@ Generate a complete, single HTML file with:
 9. Buttons must be at least 48px tall for touch targets
 
 **Image Rules:**
-10. Use hero image from ORIGINAL IMAGES in the Hook section if available
-11. Keep quiz steps image-free for clean, focused UX`;
+${analysis.originalImages.length > 0
+  ? `10. Use hero image from ORIGINAL IMAGES in the Hook section
+11. Keep quiz steps image-free for clean, focused UX`
+  : `10. NO original images exist — do NOT add any <img> tags or image URLs anywhere
+11. Use bold colors, gradients, and strong typography to create visual impact instead`}`;
+
 }
 
 /**

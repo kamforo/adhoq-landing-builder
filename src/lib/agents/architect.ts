@@ -119,7 +119,9 @@ export async function planLandingPage(
 - Tactics: ${analysis.strategySummary.keyPersuasionTactics.join(', ')}
 
 **Original Images:**
-${analysis.originalImages.slice(0, 3).map(img => `- ${img}`).join('\n') || '- No images available'}
+${analysis.originalImages.length > 0
+  ? analysis.originalImages.slice(0, 3).map(img => `- ${img}`).join('\n')
+  : '- NONE — Do NOT include any <img> tags or image elements. Use color, typography, and layout only.'}
 
 **User Styling Preferences:**
 ${stylingOptions ? formatStylingPreferences(stylingOptions) : 'Use defaults'}
@@ -142,7 +144,9 @@ Create a detailed blueprint with EXACTLY this structure:
 
 1. **HOOK Section (Step 1)**
    - Attention-grabbing headline
-   - Hero image (from original or suggestion)
+${analysis.originalImages.length > 0
+  ? '   - Hero image (from original images provided above)'
+  : '   - NO hero image (none available) — use bold colors, gradients, or typography instead'}
    - Short hook text
    - Single "Continue/Start" button
 
@@ -170,7 +174,9 @@ Create a detailed blueprint with EXACTLY this structure:
       "title": "Attention Hook",
       "elements": [
         {"type": "headline", "content": "Exact headline text", "purpose": "grab attention"},
-        {"type": "image", "content": "image url or description", "purpose": "visual hook"},
+${analysis.originalImages.length > 0
+  ? '        {"type": "image", "content": "image url from originals", "purpose": "visual hook"},'
+  : '        // NO image element — no original images available'}
         {"type": "text", "content": "hook paragraph", "purpose": "build curiosity"},
         {"type": "button", "content": "Start Now", "purpose": "begin journey"}
       ],
@@ -390,10 +396,11 @@ function nextStep() {
 
 ## CRITICAL RULES:
 
-1. HOOK (Step 1): Hero + headline + Continue button
+1. HOOK (Step 1): ${analysis.originalImages.length > 0 ? 'Hero image + headline' : 'Headline (NO images — use colors/gradients only)'} + Continue button
 2. QUIZ (Middle steps): Question + answer options ONLY - answers call nextStep()
 3. CTA (Final step): Urgency + final button that redirects
 4. Follow the EXACT content provided in the blueprint above
+${analysis.originalImages.length === 0 ? '5. Do NOT use any <img> tags or image URLs — no images are available' : ''}
 
 Generate complete HTML starting with <!DOCTYPE html>`;
 }
