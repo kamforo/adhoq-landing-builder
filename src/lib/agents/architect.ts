@@ -97,7 +97,8 @@ export interface LPBlueprint {
  */
 export async function planLandingPage(
   analysis: ComponentAnalysis,
-  stylingOptions?: BuilderStylingOptions
+  stylingOptions?: BuilderStylingOptions,
+  brief?: string
 ): Promise<LPBlueprint> {
   const llm = getLLMProvider('grok');
 
@@ -122,6 +123,18 @@ ${analysis.originalImages.slice(0, 3).map(img => `- ${img}`).join('\n') || '- No
 
 **User Styling Preferences:**
 ${stylingOptions ? formatStylingPreferences(stylingOptions) : 'Use defaults'}
+
+${brief ? `## USER BRIEF:\n${brief}\n` : ''}
+## DESIGN DIRECTION:
+- Generate a UNIQUE color palette that matches the mood, vertical, and tone
+  — do NOT use generic pink/purple/dark defaults
+- Consider: warm earth tones, cool ocean blues, sunset gradients, neon accents,
+  minimalist monochromes, bold contrasts, pastel softness, etc.
+- Vary typography: serif headlines for elegance, bold condensed sans for energy,
+  rounded fonts for playfulness — specify the vibe, not just "Bold, 28-32px"
+- Vary background approach: solid color, linear gradient, radial gradient,
+  light theme vs dark theme — describe the aesthetic
+- The page should feel DISTINCTIVE — not like every other dating LP
 
 ## YOUR TASK:
 
@@ -230,7 +243,7 @@ Return ONLY valid JSON.`;
     const parsed = JSON.parse(jsonMatch[0]);
 
     // Generate the builder prompt from the blueprint
-    const builderPrompt = generateBuilderPromptFromBlueprint(parsed, analysis);
+    const builderPrompt = generateBuilderPromptFromBlueprint(parsed, analysis, brief);
 
     return {
       id: `blueprint-${Date.now()}`,
@@ -282,6 +295,9 @@ function formatStylingPreferences(options: BuilderStylingOptions): string {
   if (options.customInstructions) {
     parts.push(`Custom: ${options.customInstructions}`);
   }
+  if (options.brief) {
+    parts.push(`User brief: ${options.brief}`);
+  }
 
   return parts.length > 0 ? parts.join('\n') : 'Use defaults';
 }
@@ -291,7 +307,8 @@ function formatStylingPreferences(options: BuilderStylingOptions): string {
  */
 function generateBuilderPromptFromBlueprint(
   blueprint: Partial<LPBlueprint>,
-  analysis: ComponentAnalysis
+  analysis: ComponentAnalysis,
+  brief?: string
 ): string {
   const sections = blueprint.sections || [];
 
@@ -306,12 +323,20 @@ function generateBuilderPromptFromBlueprint(
 
   const colors = blueprint.visualDirection?.colorPalette || getDefaultVisualDirection(analysis.vertical).colorPalette;
 
-  return `You are building a ${analysis.vertical} dating landing page.
+  const visualDir = blueprint.visualDirection;
 
+  return `You are building a ${analysis.vertical} dating landing page.
+${brief ? `\n## USER BRIEF:\n${brief}\n` : ''}
 ## EXACT STRUCTURE TO BUILD:
 
 Total Steps: ${blueprint.totalSteps || analysis.flow.totalSteps}
 ${stepInstructions}
+
+## DESIGN PERSONALITY:
+${visualDir?.imagery?.backgroundStyle ? `- Background: ${visualDir.imagery.backgroundStyle}` : ''}
+${visualDir?.typography?.headlineStyle ? `- Headlines: ${visualDir.typography.headlineStyle}` : ''}
+${visualDir?.typography?.bodyStyle ? `- Body text: ${visualDir.typography.bodyStyle}` : ''}
+Make the page feel unique and on-brand — avoid generic defaults.
 
 ## VISUAL DIRECTION:
 
@@ -374,61 +399,133 @@ Generate complete HTML starting with <!DOCTYPE html>`;
 }
 
 /**
- * Get default visual direction based on vertical
+ * Convert HSL values to hex color string
  */
-function getDefaultVisualDirection(vertical: string) {
-  const directions: Record<string, LPBlueprint['visualDirection']> = {
-    adult: {
-      colorPalette: {
-        primary: '#e91e63',
-        secondary: '#9c27b0',
-        accent: '#ff1744',
-        background: '#1a1a2e',
-        text: '#ffffff',
-      },
-      typography: {
-        headlineStyle: 'Bold, seductive, 28-32px',
-        bodyStyle: 'Clean, 16-18px',
-      },
-      imagery: {
-        backgroundStyle: 'Dark gradient with subtle pattern',
-      },
-    },
-    casual: {
-      colorPalette: {
-        primary: '#ff6b6b',
-        secondary: '#4ecdc4',
-        accent: '#ffd93d',
-        background: '#2d3436',
-        text: '#ffffff',
-      },
-      typography: {
-        headlineStyle: 'Playful, bold, 28-32px',
-        bodyStyle: 'Friendly, 16-18px',
-      },
-      imagery: {
-        backgroundStyle: 'Gradient with warm tones',
-      },
-    },
-    mainstream: {
-      colorPalette: {
-        primary: '#667eea',
-        secondary: '#764ba2',
-        accent: '#f093fb',
-        background: '#ffffff',
-        text: '#333333',
-      },
-      typography: {
-        headlineStyle: 'Clean, professional, 28-32px',
-        bodyStyle: 'Readable, 16-18px',
-      },
-      imagery: {
-        backgroundStyle: 'Light, clean, professional',
-      },
-    },
+function hslToHex(h: number, s: number, l: number): string {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Get a random integer between min and max (inclusive)
+ */
+function randInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Get default visual direction based on vertical — randomized each time
+ */
+function getDefaultVisualDirection(vertical: string): LPBlueprint['visualDirection'] {
+  const typographyOptions = {
+    adult: [
+      { headlineStyle: 'Bold condensed sans-serif, sultry, 28-32px', bodyStyle: 'Light sans-serif, 16-18px' },
+      { headlineStyle: 'Italic serif, elegant and provocative, 26-30px', bodyStyle: 'Clean sans-serif, 16px' },
+      { headlineStyle: 'Uppercase bold sans, edgy, 28-34px', bodyStyle: 'Slim geometric sans, 16-18px' },
+    ],
+    casual: [
+      { headlineStyle: 'Rounded bold sans-serif, fun and friendly, 28-32px', bodyStyle: 'Casual sans-serif, 16-18px' },
+      { headlineStyle: 'Handwritten-style display, playful, 26-30px', bodyStyle: 'Soft rounded sans, 16px' },
+      { headlineStyle: 'Bold geometric sans, modern, 28-34px', bodyStyle: 'Clean humanist sans, 16-18px' },
+    ],
+    mainstream: [
+      { headlineStyle: 'Clean serif, professional and warm, 28-32px', bodyStyle: 'Readable sans-serif, 16-18px' },
+      { headlineStyle: 'Elegant thin sans-serif, refined, 26-30px', bodyStyle: 'Classic serif body, 16px' },
+      { headlineStyle: 'Bold slab-serif, trustworthy, 28-34px', bodyStyle: 'Modern sans-serif, 16-18px' },
+    ],
   };
 
-  return directions[vertical] || directions.casual;
+  const bgOptions = {
+    adult: [
+      'Dark gradient (deep purple to black) with subtle radial glow',
+      'Solid near-black with neon accent borders',
+      'Dark moody gradient with warm undertones',
+      'Rich dark background with subtle shimmer texture',
+    ],
+    casual: [
+      'Warm sunset gradient (coral to peach)',
+      'Vibrant solid color with contrasting card sections',
+      'Light-to-medium gradient with playful accent pops',
+      'Bold split-tone background with geometric shapes',
+    ],
+    mainstream: [
+      'Clean white with subtle blue-tinted gradient sections',
+      'Soft pastel gradient (lavender to sky blue)',
+      'Light warm background with elegant divider lines',
+      'Off-white with muted accent color blocks',
+    ],
+  };
+
+  if (vertical === 'adult') {
+    // Dark backgrounds, hue 280-350 (purples, magentas, deep reds)
+    const hue = randInt(280, 350);
+    const primary = hslToHex(hue, randInt(60, 90), randInt(45, 60));
+    const secondary = hslToHex((hue + randInt(20, 60)) % 360, randInt(50, 80), randInt(35, 55));
+    const accent = hslToHex(randInt(0, 30), randInt(80, 100), randInt(50, 65));
+    const bgLightness = randInt(8, 16);
+    const background = hslToHex(hue, randInt(20, 40), bgLightness);
+    const text = '#ffffff';
+    const typo = typographyOptions.adult[randInt(0, typographyOptions.adult.length - 1)];
+    const bg = bgOptions.adult[randInt(0, bgOptions.adult.length - 1)];
+
+    return {
+      colorPalette: { primary, secondary, accent, background, text },
+      typography: typo,
+      imagery: { backgroundStyle: bg },
+    };
+  }
+
+  if (vertical === 'mainstream') {
+    // Professional palettes in blue/purple/teal range (hue 180-280)
+    const hue = randInt(180, 280);
+    const isDark = Math.random() < 0.25; // 25% chance of dark theme
+    const primary = hslToHex(hue, randInt(50, 80), isDark ? randInt(55, 70) : randInt(45, 60));
+    const secondary = hslToHex((hue + randInt(30, 80)) % 360, randInt(40, 70), isDark ? randInt(45, 60) : randInt(35, 55));
+    const accent = hslToHex((hue + randInt(120, 180)) % 360, randInt(60, 90), randInt(55, 70));
+    const background = isDark ? hslToHex(hue, randInt(10, 25), randInt(10, 18)) : hslToHex(hue, randInt(5, 15), randInt(95, 99));
+    const text = isDark ? '#f0f0f5' : hslToHex(hue, randInt(10, 30), randInt(15, 25));
+    const typo = typographyOptions.mainstream[randInt(0, typographyOptions.mainstream.length - 1)];
+    const bg = bgOptions.mainstream[randInt(0, bgOptions.mainstream.length - 1)];
+
+    return {
+      colorPalette: { primary, secondary, accent, background, text },
+      typography: typo,
+      imagery: { backgroundStyle: bg },
+    };
+  }
+
+  // Casual: vibrant palettes, broad hue range, light or dark
+  const hue = randInt(0, 360);
+  const isDark = Math.random() < 0.4;
+  const primary = hslToHex(hue, randInt(60, 95), randInt(50, 65));
+  const secondary = hslToHex((hue + randInt(90, 180)) % 360, randInt(50, 85), randInt(45, 60));
+  const accent = hslToHex((hue + randInt(40, 80)) % 360, randInt(75, 100), randInt(55, 70));
+  const background = isDark ? hslToHex(hue, randInt(15, 30), randInt(12, 20)) : hslToHex(hue, randInt(5, 20), randInt(93, 98));
+  const text = isDark ? '#ffffff' : hslToHex(hue, randInt(10, 25), randInt(15, 25));
+  const typo = typographyOptions.casual[randInt(0, typographyOptions.casual.length - 1)];
+  const bg = bgOptions.casual[randInt(0, bgOptions.casual.length - 1)];
+
+  return {
+    colorPalette: { primary, secondary, accent, background, text },
+    typography: typo,
+    imagery: { backgroundStyle: bg },
+  };
 }
 
 /**

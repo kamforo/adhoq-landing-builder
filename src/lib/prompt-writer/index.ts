@@ -28,6 +28,7 @@ export interface BuilderStylingOptions {
   creativity?: number;
   customInstructions?: string;
   addElements?: AddElementOptions;
+  brief?: string;
 }
 
 /**

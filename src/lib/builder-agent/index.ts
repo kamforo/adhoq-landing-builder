@@ -33,6 +33,13 @@ ${builderPrompt.fullPrompt}
 
 ${lpRules}
 
+## DESIGN VARIATION:
+Make this page visually distinctive:
+- Experiment with background approach (gradients, solid colors, subtle patterns)
+- Use creative button styles (pill, rounded, sharp, with shadows/glows)
+- Vary spacing rhythms, card styles, section separators
+- Match the blueprint's visual direction — don't default to the same look
+
 ## CRITICAL REQUIREMENTS:
 
 ${isMultiStep ? `
@@ -152,7 +159,18 @@ export async function buildVariations(
 
   for (let i = 0; i < count; i++) {
     console.log(`Building variation ${i + 1} of ${count}...`);
-    const result = await buildLandingPage(builderPrompt, analysis);
+
+    // For variations beyond the first, add a differentiation note
+    let promptToUse = builderPrompt;
+    if (i > 0 && count > 1) {
+      const variationNote = `\n\n## VARIATION NOTE:\nThis is variation ${i + 1} of ${count}. Make it visually distinct from other variations — try a different color temperature, layout rhythm, or background approach.\n`;
+      promptToUse = {
+        ...builderPrompt,
+        fullPrompt: builderPrompt.fullPrompt + variationNote,
+      };
+    }
+
+    const result = await buildLandingPage(promptToUse, analysis);
     result.id = `variation-${i + 1}-${Date.now()}`;
     results.push(result);
 

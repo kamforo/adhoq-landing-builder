@@ -124,7 +124,7 @@ async function handleFullV3WorkflowFromBrief(
     });
 
     // ===== STEPS 2-6: Identical to source workflow =====
-    return runPipelineFromAnalysis(analysis, options, variationCount, 'v3-scratch');
+    return runPipelineFromAnalysis(analysis, options, variationCount, 'v3-scratch', undefined, brief);
   } catch (error) {
     console.error('V3 Scratch Workflow error:', error);
     return NextResponse.json(
@@ -204,7 +204,8 @@ async function runPipelineFromAnalysis(
   options: Partial<GenerationOptions>,
   variationCount: number,
   workflow: string,
-  sourcePageId?: string
+  sourcePageId?: string,
+  brief?: string
 ) {
   // ===== STEP 2: ARCHITECT =====
   console.log('\n🏗️ Step 2: Architect...');
@@ -221,9 +222,10 @@ async function runPipelineFromAnalysis(
     creativity: options.creativity,
     customInstructions: options.textInstructions,
     addElements: options.addElements,
+    brief,
   };
 
-  const blueprint = await planLandingPage(analysis, stylingOptions);
+  const blueprint = await planLandingPage(analysis, stylingOptions, brief);
   console.log('Blueprint created:', {
     sections: blueprint.sections.length,
     totalSteps: blueprint.totalSteps,
