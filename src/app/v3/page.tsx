@@ -419,6 +419,12 @@ function V3BuilderContent() {
   const runV3GenerationFromBrief = async () => {
     if (!briefText.trim() || !project) return;
 
+    // Tracking URL is mandatory for scratch mode (no source page to detect from)
+    if (!options.ctaUrlOverride?.trim()) {
+      setGenerationError('Tracking URL is required when building from scratch.');
+      return;
+    }
+
     setIsGenerating(true);
     setGenerationError(null);
 
