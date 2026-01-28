@@ -11,6 +11,7 @@ import {
   ParsedSummary,
   QuickSettings,
   AdvancedSettings,
+  BriefInput,
 } from '@/components/landing-builder';
 import {
   Dialog,
@@ -33,6 +34,7 @@ import {
   Eye,
   AlertTriangle,
   RefreshCw,
+  FileText,
 } from 'lucide-react';
 import type { ParsedLandingPage, GenerationOptions } from '@/types';
 import type { ComponentAnalysis } from '@/types/component-analysis';
@@ -114,9 +116,19 @@ type GeneratedVariation = {
   };
 };
 
-const STEPS: { id: Step; label: string; icon: React.ElementType; description: string }[] = [
+const SOURCE_STEPS: { id: Step; label: string; icon: React.ElementType; description: string }[] = [
   { id: 'upload', label: 'Upload', icon: Upload, description: 'Upload source page' },
   { id: 'analyze', label: 'Analyze', icon: Search, description: 'AI extracts components' },
+  { id: 'architect', label: 'Architect', icon: PenTool, description: 'Plan LP structure' },
+  { id: 'build', label: 'Build', icon: Hammer, description: 'Generate HTML' },
+  { id: 'qa', label: 'QA', icon: CheckCircle, description: 'Validate output' },
+  { id: 'repair', label: 'Repair', icon: Wrench, description: 'Fix issues' },
+  { id: 'complete', label: 'Complete', icon: Sparkles, description: 'Download LP' },
+];
+
+const SCRATCH_STEPS: { id: Step; label: string; icon: React.ElementType; description: string }[] = [
+  { id: 'upload', label: 'Brief', icon: FileText, description: 'Describe your landing page' },
+  { id: 'analyze', label: 'Design', icon: Search, description: 'AI designs page structure' },
   { id: 'architect', label: 'Architect', icon: PenTool, description: 'Plan LP structure' },
   { id: 'build', label: 'Build', icon: Hammer, description: 'Generate HTML' },
   { id: 'qa', label: 'QA', icon: CheckCircle, description: 'Validate output' },
@@ -161,6 +173,16 @@ function V3BuilderContent() {
   const [previewHtml, setPreviewHtml] = useState('');
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [options, setOptions] = useState<Partial<GenerationOptions>>(DEFAULT_V3_OPTIONS);
+  const [inputMode, setInputMode] = useState<'source' | 'scratch'>('source');
+  const [briefText, setBriefText] = useState('');
+
+  // Read mode from URL query param
+  useEffect(() => {
+    const mode = searchParams.get('mode');
+    if (mode === 'scratch') {
+      setInputMode('scratch');
+    }
+  }, [searchParams]);
 
   // Load project from URL
   const loadProject = useCallback(async (projectId: string) => {
@@ -169,6 +191,12 @@ function V3BuilderContent() {
       if (response.ok) {
         const data = await response.json();
         setProject(data);
+
+        // Restore brief from project options if available
+        if (data.options?.brief) {
+          setBriefText(data.options.brief);
+          setInputMode('scratch');
+        }
 
         // Restore parsedPage from project if it has sourceHtml
         if (data.sourceHtml) {
@@ -400,6 +428,115 @@ function V3BuilderContent() {
     }
   };
 
+  // Run V3 generation from brief (scratch mode)
+  const runV3GenerationFromBrief = async () => {
+    if (!briefText.trim()) return;
+
+    setIsGenerating(true);
+    setGenerationError(null);
+
+    // Simulate step progression while the single API call runs the full pipeline.
+    // The API does Brief→Architect→Build→QA→Repair in one shot, so we advance the
+    // UI through steps on a timer so the user sees progress rather than sitting on
+    // one step for ~90 seconds.
+    setStep('analyze');
+    const stepTimers = [
+      setTimeout(() => setStep('architect'), 8_000),
+      setTimeout(() => setStep('build'), 20_000),
+      setTimeout(() => setStep('qa'), 55_000),
+    ];
+
+    try {
+      // Save brief + options to the project
+      if (project) {
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            options: { ...options, brief: briefText },
+            trackingUrl: options.ctaUrlOverride || undefined,
+            vertical: options.vertical,
+            language: options.language,
+            country: options.country,
+          }),
+        });
+      }
+
+      // Call V3 API with brief (no sourcePage) — runs the full pipeline
+      const response = await fetch('/api/v3/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief: briefText,
+          options: options,
+        }),
+      });
+
+      // Cancel simulated timers — real results are in
+      stepTimers.forEach(clearTimeout);
+
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.error || 'Generation failed');
+        } else {
+          const text = await response.text();
+          console.error('Server error (non-JSON):', text.substring(0, 500));
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
+      }
+
+      const result = await response.json();
+
+      // Apply real results
+      if (result.analysis) setAnalysis(result.analysis);
+      if (result.blueprint) setBlueprint(result.blueprint);
+      if (result.variations?.length > 0) setVariations(result.variations);
+      if (result.qaResults) setQaResults(result.qaResults);
+
+      // Jump to final step
+      if (result.qaResults?.some((qa: QAResultSummary) => qa.criticalCount > 0)) {
+        setStep('repair');
+      } else {
+        setStep('complete');
+      }
+
+      // Update project with results and save variations
+      if (project && result.variations && result.variations.length > 0) {
+        await fetch(`/api/projects/${project.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'COMPLETED',
+            analysis: result.analysis,
+            architectPlan: result.blueprint,
+            qaResults: result.qaResults?.[0],
+          }),
+        });
+
+        for (let i = 0; i < result.variations.length; i++) {
+          const variation = result.variations[i];
+          await fetch(`/api/projects/${project.id}/variations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              number: i + 1,
+              html: variation.html,
+            }),
+          });
+        }
+      }
+    } catch (error) {
+      stepTimers.forEach(clearTimeout);
+      console.error('V3 scratch generation error:', error);
+      setGenerationError(error instanceof Error ? error.message : 'Generation failed');
+      setStep('upload');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   // Run repair on a variation
   const runRepair = async (variationIndex: number) => {
     if (!variations[variationIndex]) return;
@@ -460,6 +597,9 @@ function V3BuilderContent() {
     URL.revokeObjectURL(url);
   };
 
+  // Get steps based on mode
+  const STEPS = inputMode === 'scratch' ? SCRATCH_STEPS : SOURCE_STEPS;
+
   // Get current step index
   const currentStepIndex = STEPS.findIndex(s => s.id === step);
 
@@ -511,7 +651,9 @@ function V3BuilderContent() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Analyzer → Architect → Builder → QA → Repair
+                  {inputMode === 'scratch'
+                    ? 'Brief → Architect → Builder → QA → Repair'
+                    : 'Analyzer → Architect → Builder → QA → Repair'}
                 </p>
               </div>
             </div>
@@ -591,13 +733,50 @@ function V3BuilderContent() {
           </div>
         )}
 
-        {/* Step 1: Upload */}
+        {/* Step 1: Upload / Brief */}
         {step === 'upload' && (
           <div className="max-w-5xl mx-auto">
+            {/* Mode Toggle */}
+            <div className="flex justify-center mb-6">
+              <div className="inline-flex rounded-lg border bg-muted p-1">
+                <button
+                  onClick={() => setInputMode('source')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    inputMode === 'source'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Upload className="h-4 w-4 inline mr-2" />
+                  From Source Page
+                </button>
+                <button
+                  onClick={() => setInputMode('scratch')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    inputMode === 'scratch'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <FileText className="h-4 w-4 inline mr-2" />
+                  From Scratch
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Upload Zone */}
+              {/* Left: Upload Zone or Brief Input */}
               <div>
-                <UploadZone onParse={handleParse} isLoading={isParsing} />
+                {inputMode === 'source' ? (
+                  <UploadZone onParse={handleParse} isLoading={isParsing} />
+                ) : (
+                  <BriefInput
+                    value={briefText}
+                    onChange={setBriefText}
+                    onGenerate={runV3GenerationFromBrief}
+                    isLoading={isGenerating}
+                  />
+                )}
               </div>
 
               {/* Right: Settings */}
@@ -622,11 +801,18 @@ function V3BuilderContent() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Search className="h-5 w-5" />
-                  Analyze Source Page
+                  {inputMode === 'scratch' ? 'Analyze Brief' : 'Analyze Source Page'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {parsedPage && <ParsedSummary page={parsedPage} />}
+
+                {inputMode === 'scratch' && briefText && !analysis && !isGenerating && (
+                  <div className="mb-4 p-3 bg-muted/50 rounded-lg border text-sm">
+                    <p className="font-medium mb-1">Brief:</p>
+                    <p className="text-muted-foreground">{briefText}</p>
+                  </div>
+                )}
 
                 {analysis ? (
                   <div className="mt-6 p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
@@ -654,9 +840,15 @@ function V3BuilderContent() {
                     <div className="flex items-center gap-3">
                       <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
                       <div>
-                        <p className="font-medium">AI Analyzer is extracting components...</p>
+                        <p className="font-medium">
+                          {inputMode === 'scratch'
+                            ? 'AI is synthesizing components from your brief...'
+                            : 'AI Analyzer is extracting components...'}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Detecting headlines, CTAs, persuasion elements, and styles
+                          {inputMode === 'scratch'
+                            ? 'Designing page structure, flow, and conversion strategy'
+                            : 'Detecting headlines, CTAs, persuasion elements, and styles'}
                         </p>
                       </div>
                     </div>

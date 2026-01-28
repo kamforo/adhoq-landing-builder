@@ -99,6 +99,10 @@ export default function AdminDashboard() {
   const [newV3ProjectName, setNewV3ProjectName] = useState('');
   const [isCreatingV3, setIsCreatingV3] = useState(false);
 
+  // New V3 scratch project form
+  const [newScratchProjectName, setNewScratchProjectName] = useState('');
+  const [isCreatingScratch, setIsCreatingScratch] = useState(false);
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -210,6 +214,32 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Failed to create V3 project:', error);
       setIsCreatingV3(false);
+    }
+  };
+
+  // Create new V3 scratch project and go to V3 builder in scratch mode
+  const handleCreateScratchProject = async () => {
+    if (!newScratchProjectName.trim()) return;
+
+    setIsCreatingScratch(true);
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newScratchProjectName.trim(),
+          pipelineVersion: 'v3',
+        }),
+      });
+
+      if (response.ok) {
+        const project = await response.json();
+        setNewScratchProjectName('');
+        router.push(`/v3?project=${project.id}&mode=scratch`);
+      }
+    } catch (error) {
+      console.error('Failed to create scratch project:', error);
+      setIsCreatingScratch(false);
     }
   };
 
@@ -900,76 +930,58 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
 
-              {/* V3 Pipeline Info */}
+              {/* Create from Scratch */}
               <Card>
                 <CardHeader>
-                  <CardTitle>V3 Pipeline Agents</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-purple-500" />
+                    Create from Scratch
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-3 p-3 rounded-lg border">
-                      <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold text-sm">
-                        1
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Analyzer</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Extracts components, styles, and persuasion elements
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
-                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
-                        2
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-purple-900 dark:text-purple-100">Architect</h4>
-                        <p className="text-sm text-purple-700 dark:text-purple-300">
-                          Plans LP structure, flow, and conversion strategy
-                        </p>
-                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-lg border">
-                      <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-green-600 dark:text-green-300 font-bold text-sm">
-                        3
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Builder</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Generates the HTML based on architect&apos;s plan
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
-                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
-                        4
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-purple-900 dark:text-purple-100">QA Agent</h4>
-                        <p className="text-sm text-purple-700 dark:text-purple-300">
-                          Validates HTML, tests functionality, checks responsiveness
-                        </p>
-                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
-                      <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center text-purple-600 dark:text-purple-300 font-bold text-sm">
-                        5
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-purple-900 dark:text-purple-100">Repair Agent</h4>
-                        <p className="text-sm text-purple-700 dark:text-purple-300">
-                          Fixes issues found by QA or described by user
-                        </p>
-                        <Badge variant="outline" className="mt-1 text-xs border-purple-300">New in V3</Badge>
-                      </div>
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <h4 className="font-medium text-purple-900 dark:text-purple-100 mb-2">
+                      No Source Page Needed
+                    </h4>
+                    <p className="text-sm text-purple-700 dark:text-purple-300">
+                      Describe the landing page you want and the AI will generate it from scratch.
+                      Just provide a brief and the system handles the rest.
+                    </p>
+                    <div className="mt-3 text-xs text-purple-600 dark:text-purple-400 font-mono">
+                      Brief → Architect → Builder → QA → Repair → Output
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Project Name</label>
+                    <Input
+                      value={newScratchProjectName}
+                      onChange={e => setNewScratchProjectName(e.target.value)}
+                      placeholder="My Scratch Landing Page"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newScratchProjectName.trim()) {
+                          handleCreateScratchProject();
+                        }
+                      }}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleCreateScratchProject}
+                    disabled={isCreatingScratch || !newScratchProjectName.trim()}
+                    className="w-full bg-purple-600 hover:bg-purple-700"
+                  >
+                    {isCreatingScratch ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Create from Scratch
+                      </>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             </div>

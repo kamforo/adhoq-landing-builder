@@ -11,3 +11,4 @@ export { AdvancedSettings } from './advanced-settings';
 export { AnalysisPanel } from './analysis-panel';
 export { PromptPreview } from './prompt-preview';
 export { ProjectManager } from './project-manager';
+export { BriefInput } from './brief-input';

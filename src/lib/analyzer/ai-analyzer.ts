@@ -525,7 +525,7 @@ Return ONLY valid JSON, no explanation.`;
 /**
  * Validate and clean component data
  */
-function validateComponents(components: unknown[]): AnalyzedComponent[] {
+export function validateComponents(components: unknown[]): AnalyzedComponent[] {
   if (!Array.isArray(components)) return [];
 
   return components.map((c, index) => {
@@ -564,17 +564,17 @@ function validateTechniques(techniques: unknown): PersuasionTechnique[] {
   return techniques.filter(t => valid.includes(t as PersuasionTechnique)) as PersuasionTechnique[];
 }
 
-function validateVertical(vertical: unknown): DatingVertical {
+export function validateVertical(vertical: unknown): DatingVertical {
   const valid: DatingVertical[] = ['adult', 'casual', 'mainstream'];
   return valid.includes(vertical as DatingVertical) ? (vertical as DatingVertical) : 'casual';
 }
 
-function validateTone(tone: unknown): LPTone {
+export function validateTone(tone: unknown): LPTone {
   const valid: LPTone[] = ['playful-seductive', 'urgent-exciting', 'professional-trustworthy', 'friendly-approachable', 'bold-confident', 'intimate-personal', 'fun-lighthearted'];
   return valid.includes(tone as LPTone) ? (tone as LPTone) : 'playful-seductive';
 }
 
-function validateSections(sections: unknown, totalSteps: number, isMultiStep: boolean): DetectedSection[] {
+export function validateSections(sections: unknown, totalSteps: number, isMultiStep: boolean): DetectedSection[] {
   // If AI provided valid sections, use them
   if (Array.isArray(sections) && sections.length > 0) {
     return sections.map(s => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeWithAI } from '@/lib/analyzer/ai-analyzer';
+import { analyzeFromBrief } from '@/lib/analyzer/brief-analyzer';
 import { planLandingPage, reviewLandingPage, repairLandingPage, quickValidate } from '@/lib/agents';
 import { buildVariations } from '@/lib/builder-agent';
 import { embedExternalImages } from '@/lib/parser/image-embedder';
@@ -10,15 +11,17 @@ import type { LPBlueprint } from '@/lib/agents/architect';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sourcePage, options, step } = body as {
-      sourcePage: ParsedLandingPage;
+    const { sourcePage, brief, options, step } = body as {
+      sourcePage?: ParsedLandingPage;
+      brief?: string;
       options: Partial<GenerationOptions>;
       step?: 'analyze' | 'architect' | 'build' | 'qa' | 'repair' | 'full';
     };
 
-    if (!sourcePage) {
+    // Validate: require either sourcePage OR brief
+    if (!sourcePage && !brief) {
       return NextResponse.json(
-        { error: 'Source page data is required' },
+        { error: 'Either source page data or a brief is required' },
         { status: 400 }
       );
     }
@@ -26,13 +29,17 @@ export async function POST(request: NextRequest) {
     // Default to full workflow
     const currentStep = step || 'full';
 
-    // For single steps, handle them individually
-    if (currentStep === 'analyze') {
+    // For single steps, handle them individually (source page only)
+    if (currentStep === 'analyze' && sourcePage) {
       return handleAnalyzeStep(sourcePage, options);
     }
 
     // Full V3 workflow
-    return handleFullV3Workflow(sourcePage, options);
+    if (brief && !sourcePage) {
+      return handleFullV3WorkflowFromBrief(brief, options);
+    }
+
+    return handleFullV3Workflow(sourcePage!, options);
   } catch (error) {
     console.error('V3 Generate error:', error);
     return NextResponse.json(
@@ -80,6 +87,51 @@ async function handleAnalyzeStep(
     step: 'analyze',
     analysis,
   });
+}
+
+/**
+ * Full V3 workflow FROM BRIEF: Brief Analyzer → Architect → Builder → QA → Repair (if needed)
+ */
+async function handleFullV3WorkflowFromBrief(
+  brief: string,
+  options: Partial<GenerationOptions>
+) {
+  try {
+    console.log('=== V3 SCRATCH WORKFLOW (From Brief) ===');
+
+    const variationCount = Math.min(options.variationCount || 1, 5);
+
+    // ===== STEP 1: BRIEF ANALYZER =====
+    console.log('\n📝 Step 1: Brief Analyzer...');
+    const analysis = await analyzeFromBrief(brief, options);
+
+    // Apply overrides
+    if (options.ctaUrlOverride && options.ctaUrlOverride.trim()) {
+      analysis.trackingUrl = options.ctaUrlOverride.trim();
+    }
+    if (options.vertical && options.vertical !== 'auto') {
+      analysis.vertical = options.vertical as DatingVertical;
+    }
+    if (options.stepCount && options.stepCount > 0) {
+      analysis.flow.totalSteps = options.stepCount;
+    }
+
+    console.log('Brief Analysis:', {
+      components: analysis.components.length,
+      vertical: analysis.vertical,
+      tone: analysis.tone,
+      trackingUrl: analysis.trackingUrl,
+    });
+
+    // ===== STEPS 2-6: Identical to source workflow =====
+    return runPipelineFromAnalysis(analysis, options, variationCount, 'v3-scratch');
+  } catch (error) {
+    console.error('V3 Scratch Workflow error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'V3 scratch workflow failed' },
+      { status: 500 }
+    );
+  }
 }
 
 /**
@@ -132,6 +184,28 @@ async function handleFullV3Workflow(
     trackingUrl: analysis.trackingUrl,
   });
 
+    // ===== STEPS 2-6: Shared pipeline =====
+    return runPipelineFromAnalysis(analysis, options, variationCount, 'v3-architect', sourcePage.id);
+  } catch (error) {
+    console.error('V3 Workflow error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'V3 workflow failed' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Shared pipeline: Architect → Builder → QA → Repair → Embed Images
+ * Used by both source-page and from-scratch workflows
+ */
+async function runPipelineFromAnalysis(
+  analysis: Awaited<ReturnType<typeof analyzeWithAI>>,
+  options: Partial<GenerationOptions>,
+  variationCount: number,
+  workflow: string,
+  sourcePageId?: string
+) {
   // ===== STEP 2: ARCHITECT =====
   console.log('\n🏗️ Step 2: Architect...');
   const stylingOptions = {
@@ -245,7 +319,7 @@ async function handleFullV3Workflow(
   // Convert to response format
   const variations = finalVariations.map((result, index) => ({
     id: result.id,
-    sourcePageId: sourcePage.id || 'unknown',
+    sourcePageId: sourcePageId || 'scratch',
     variationNumber: index + 1,
     html: result.html,
     assets: [],
@@ -254,7 +328,7 @@ async function handleFullV3Workflow(
       selector: 'html',
       originalValue: '',
       newValue: '',
-      reason: 'Generated with V3 Architect workflow',
+      reason: `Generated with ${workflow} workflow`,
     }],
     generatedAt: result.generatedAt,
     qaResult: result.qaResult,
@@ -265,7 +339,7 @@ async function handleFullV3Workflow(
     success: true,
     variations,
     count: variations.length,
-    workflow: 'v3-architect',
+    workflow,
     analysis,
     blueprint: {
       id: blueprint.id,
@@ -287,13 +361,6 @@ async function handleFullV3Workflow(
       summary: qa.summary,
     })),
   });
-  } catch (error) {
-    console.error('V3 Workflow error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'V3 workflow failed' },
-      { status: 500 }
-    );
-  }
 }
 
 /**
