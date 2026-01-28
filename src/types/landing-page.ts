@@ -3,6 +3,7 @@
 export interface ParsedLandingPage {
   id: string;
   sourceUrl?: string;
+  resolvedUrl?: string;
   sourceFileName?: string;
   html: string;
   title: string;

@@ -26,13 +26,14 @@ export async function scrapeLandingPageFromUrl(url: string): Promise<ParsedLandi
 
   const html = await response.text();
 
-  // Use full URL path as base (for relative paths like ./dist/css/main.css)
-  const urlObj = new URL(url);
+  // Use the resolved URL (after redirects) for base URL computation
+  const resolvedUrl = response.url;
+  const urlObj = new URL(resolvedUrl);
   const pathParts = urlObj.pathname.split('/');
   pathParts.pop(); // Remove last segment (file or empty)
   const baseUrl = urlObj.origin + pathParts.join('/');
 
-  return parseHtmlContent(html, { sourceUrl: url, baseUrl, fetchAssets: true });
+  return parseHtmlContent(html, { sourceUrl: url, resolvedUrl, baseUrl, fetchAssets: true });
 }
 
 /**
@@ -40,7 +41,7 @@ export async function scrapeLandingPageFromUrl(url: string): Promise<ParsedLandi
  */
 export async function parseHtmlContent(
   html: string,
-  options: { sourceUrl?: string; sourceFileName?: string; baseUrl?: string; fetchAssets?: boolean }
+  options: { sourceUrl?: string; resolvedUrl?: string; sourceFileName?: string; baseUrl?: string; fetchAssets?: boolean }
 ): Promise<ParsedLandingPage> {
   const $ = cheerio.load(html);
   const baseUrl = options.baseUrl || '';
@@ -77,6 +78,7 @@ export async function parseHtmlContent(
   return {
     id: uuidv4(),
     sourceUrl: options.sourceUrl,
+    resolvedUrl: options.resolvedUrl,
     sourceFileName: options.sourceFileName,
     html: modifiedHtml,
     title,

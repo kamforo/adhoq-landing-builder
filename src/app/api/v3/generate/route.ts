@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { analyzeWithAI } from '@/lib/analyzer/ai-analyzer';
 import { planLandingPage, reviewLandingPage, repairLandingPage, quickValidate } from '@/lib/agents';
 import { buildVariations } from '@/lib/builder-agent';
+import { embedExternalImages } from '@/lib/parser/image-embedder';
 import type { ParsedLandingPage, GenerationOptions } from '@/types';
 import type { DatingVertical } from '@/types/component-analysis';
 import type { LPBlueprint } from '@/lib/agents/architect';
@@ -62,6 +63,18 @@ async function handleAnalyzeStep(
     analysis.flow.totalSteps = options.stepCount;
   }
 
+  // Fix: If detected tracking URL is the source page itself, use the original sourceUrl instead
+  if (analysis.trackingUrl && sourcePage.resolvedUrl) {
+    try {
+      const detectedHost = new URL(analysis.trackingUrl).hostname;
+      const resolvedHost = new URL(sourcePage.resolvedUrl).hostname;
+      if (detectedHost === resolvedHost && sourcePage.sourceUrl) {
+        console.log(`Redirect fix: detected URL is the LP itself (${detectedHost}), using sourceUrl instead`);
+        analysis.trackingUrl = sourcePage.sourceUrl;
+      }
+    } catch { /* ignore URL parse errors */ }
+  }
+
   return NextResponse.json({
     success: true,
     step: 'analyze',
@@ -98,6 +111,18 @@ async function handleFullV3Workflow(
   }
   if (options.stepCount && options.stepCount > 0) {
     analysis.flow.totalSteps = options.stepCount;
+  }
+
+  // Fix: If detected tracking URL is the source page itself, use the original sourceUrl instead
+  if (analysis.trackingUrl && sourcePage.resolvedUrl) {
+    try {
+      const detectedHost = new URL(analysis.trackingUrl).hostname;
+      const resolvedHost = new URL(sourcePage.resolvedUrl).hostname;
+      if (detectedHost === resolvedHost && sourcePage.sourceUrl) {
+        console.log(`Redirect fix: detected URL is the LP itself (${detectedHost}), using sourceUrl instead`);
+        analysis.trackingUrl = sourcePage.sourceUrl;
+      }
+    } catch { /* ignore URL parse errors */ }
   }
 
   console.log('Analysis:', {
@@ -197,6 +222,14 @@ async function handleFullV3Workflow(
       } catch (error) {
         console.error('Repair failed:', error);
       }
+    }
+
+    // ===== STEP 6: EMBED IMAGES =====
+    console.log('\n🖼️ Step 6: Embedding images...');
+    try {
+      finalHtml = await embedExternalImages(finalHtml);
+    } catch (error) {
+      console.error('Image embedding failed (keeping original URLs):', error);
     }
 
     finalVariations.push({
