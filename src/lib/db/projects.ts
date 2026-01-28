@@ -225,6 +225,13 @@ export async function getProjectFolders(userId?: string, teamId?: string) {
   return folders.map((f) => f.folder).filter(Boolean) as string[];
 }
 
+// Delete all variations for a project
+export async function deleteVariations(projectId: string) {
+  return prisma.variation.deleteMany({
+    where: { projectId },
+  });
+}
+
 // Add variation to project
 export async function addVariation(
   projectId: string,

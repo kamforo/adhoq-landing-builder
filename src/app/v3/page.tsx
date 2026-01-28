@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -157,6 +157,8 @@ export default function V3BuilderPage() {
 
 function V3BuilderContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isParsing, setIsParsing] = useState(false);
@@ -184,6 +186,13 @@ function V3BuilderContent() {
     }
   }, [searchParams]);
 
+  // Cleanup poll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   // Load project from URL
   const loadProject = useCallback(async (projectId: string) => {
     try {
@@ -196,6 +205,51 @@ function V3BuilderContent() {
         if (data.options?.brief) {
           setBriefText(data.options.brief);
           setInputMode('scratch');
+        }
+
+        // If project is currently generating, show progress and poll
+        if (data.status === 'GENERATING') {
+          setIsGenerating(true);
+          setStep('analyze');
+
+          // Poll every 5s until status changes
+          pollRef.current = setInterval(async () => {
+            try {
+              const pollRes = await fetch(`/api/projects/${projectId}`);
+              if (!pollRes.ok) return;
+              const pollData = await pollRes.json();
+              setProject(pollData);
+
+              if (pollData.status !== 'GENERATING') {
+                if (pollRef.current) clearInterval(pollRef.current);
+                pollRef.current = null;
+                setIsGenerating(false);
+
+                if (pollData.status === 'COMPLETED') {
+                  // Load completed results into state
+                  if (pollData.analysis) setAnalysis(pollData.analysis);
+                  if (pollData.architectPlan) setBlueprint(pollData.architectPlan);
+                  if (pollData.qaResults) setQaResults([pollData.qaResults]);
+                  if (pollData.variations && pollData.variations.length > 0) {
+                    setVariations(pollData.variations.map((v: { id: string; number: number; html: string }, index: number) => ({
+                      id: v.id,
+                      variationNumber: v.number || index + 1,
+                      html: v.html,
+                    })));
+                  }
+                  setStep('complete');
+                } else if (pollData.status === 'FAILED') {
+                  setGenerationError('Generation failed. Please try again.');
+                  setStep('upload');
+                }
+              }
+            } catch (err) {
+              console.error('Poll error:', err);
+            }
+          }, 5000);
+
+          setIsLoading(false);
+          return;
         }
 
         // Restore parsedPage from project if it has sourceHtml
@@ -231,6 +285,16 @@ function V3BuilderContent() {
         // Restore QA results if available
         if (data.qaResults) {
           setQaResults([data.qaResults]);
+          setStep('complete');
+        }
+
+        // Load variations if project is completed and has them
+        if (data.status === 'COMPLETED' && data.variations && data.variations.length > 0) {
+          setVariations(data.variations.map((v: { id: string; number: number; html: string }, index: number) => ({
+            id: v.id,
+            variationNumber: v.number || index + 1,
+            html: v.html,
+          })));
           setStep('complete');
         }
       }
@@ -302,121 +366,44 @@ function V3BuilderContent() {
     }
   };
 
-  // Run the full V3 generation workflow with a specific page
+  // Fire-and-forget V3 generation with source page, then redirect to dashboard
   const runV3GenerationWithPage = async (page: ParsedLandingPage) => {
+    if (!project) return;
+
     setIsGenerating(true);
     setGenerationError(null);
-    setStep('analyze');
 
     try {
-      // Save generation options to the project
-      if (project) {
-        await fetch(`/api/projects/${project.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            options,
-            trackingUrl: options.ctaUrlOverride || undefined,
-            vertical: options.vertical,
-            language: options.language,
-            country: options.country,
-          }),
-        });
-      }
-
-      // Call V3 API which runs the full workflow
-      const response = await fetch('/api/v3/generate', {
-        method: 'POST',
+      // Save sourceHtml + options to project
+      await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourcePage: page,
-          options: options,
+          sourceHtml: page.html,
+          sourceUrl: page.sourceUrl || null,
+          options,
+          trackingUrl: options.ctaUrlOverride || undefined,
+          vertical: options.vertical,
+          language: options.language,
+          country: options.country,
         }),
       });
 
+      // Trigger background generation
+      const response = await fetch(`/api/projects/${project.id}/generate`, {
+        method: 'POST',
+      });
+
       if (!response.ok) {
-        // Try to parse as JSON, but handle HTML error pages
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const error = await response.json();
-          throw new Error(error.error || 'Generation failed');
-        } else {
-          const text = await response.text();
-          console.error('Server error (non-JSON):', text.substring(0, 500));
-          throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to start generation');
       }
 
-      const result = await response.json();
-
-      // Update state with results progressively
-      if (result.analysis) {
-        setAnalysis(result.analysis);
-      }
-
-      // Move to architect step
-      setStep('architect');
-
-      if (result.blueprint) {
-        setBlueprint(result.blueprint);
-      }
-
-      // Move to build step
-      setStep('build');
-
-      if (result.variations && result.variations.length > 0) {
-        setVariations(result.variations);
-      }
-
-      // Move to QA step
-      setStep('qa');
-
-      if (result.qaResults) {
-        setQaResults(result.qaResults);
-
-        // Check if any QA failed with critical issues
-        const hasFailures = result.qaResults.some((qa: QAResultSummary) => qa.criticalCount > 0);
-        if (hasFailures) {
-          setStep('repair');
-        } else {
-          setStep('complete');
-        }
-      } else {
-        setStep('complete');
-      }
-
-      // Update project with results and save variations
-      if (project && result.variations && result.variations.length > 0) {
-        // Update project metadata
-        await fetch(`/api/projects/${project.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status: 'COMPLETED',
-            analysis: result.analysis,
-            architectPlan: result.blueprint,
-            qaResults: result.qaResults?.[0],
-          }),
-        });
-
-        // Save each variation to the database
-        for (let i = 0; i < result.variations.length; i++) {
-          const variation = result.variations[i];
-          await fetch(`/api/projects/${project.id}/variations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              number: i + 1,
-              html: variation.html,
-            }),
-          });
-        }
-      }
+      // Redirect to dashboard — generation runs in background
+      router.push('/');
     } catch (error) {
       console.error('V3 generation error:', error);
-      setGenerationError(error instanceof Error ? error.message : 'Generation failed');
-      setStep('analyze'); // Go back to analyze on error
-    } finally {
+      setGenerationError(error instanceof Error ? error.message : 'Failed to start generation');
       setIsGenerating(false);
     }
   };
@@ -428,111 +415,42 @@ function V3BuilderContent() {
     }
   };
 
-  // Run V3 generation from brief (scratch mode)
+  // Fire-and-forget V3 generation from brief, then redirect to dashboard
   const runV3GenerationFromBrief = async () => {
-    if (!briefText.trim()) return;
+    if (!briefText.trim() || !project) return;
 
     setIsGenerating(true);
     setGenerationError(null);
 
-    // Simulate step progression while the single API call runs the full pipeline.
-    // The API does Brief→Architect→Build→QA→Repair in one shot, so we advance the
-    // UI through steps on a timer so the user sees progress rather than sitting on
-    // one step for ~90 seconds.
-    setStep('analyze');
-    const stepTimers = [
-      setTimeout(() => setStep('architect'), 8_000),
-      setTimeout(() => setStep('build'), 20_000),
-      setTimeout(() => setStep('qa'), 55_000),
-    ];
-
     try {
       // Save brief + options to the project
-      if (project) {
-        await fetch(`/api/projects/${project.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            options: { ...options, brief: briefText },
-            trackingUrl: options.ctaUrlOverride || undefined,
-            vertical: options.vertical,
-            language: options.language,
-            country: options.country,
-          }),
-        });
-      }
-
-      // Call V3 API with brief (no sourcePage) — runs the full pipeline
-      const response = await fetch('/api/v3/generate', {
-        method: 'POST',
+      await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brief: briefText,
-          options: options,
+          options: { ...options, brief: briefText },
+          trackingUrl: options.ctaUrlOverride || undefined,
+          vertical: options.vertical,
+          language: options.language,
+          country: options.country,
         }),
       });
 
-      // Cancel simulated timers — real results are in
-      stepTimers.forEach(clearTimeout);
+      // Trigger background generation
+      const response = await fetch(`/api/projects/${project.id}/generate`, {
+        method: 'POST',
+      });
 
       if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const error = await response.json();
-          throw new Error(error.error || 'Generation failed');
-        } else {
-          const text = await response.text();
-          console.error('Server error (non-JSON):', text.substring(0, 500));
-          throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to start generation');
       }
 
-      const result = await response.json();
-
-      // Apply real results
-      if (result.analysis) setAnalysis(result.analysis);
-      if (result.blueprint) setBlueprint(result.blueprint);
-      if (result.variations?.length > 0) setVariations(result.variations);
-      if (result.qaResults) setQaResults(result.qaResults);
-
-      // Jump to final step
-      if (result.qaResults?.some((qa: QAResultSummary) => qa.criticalCount > 0)) {
-        setStep('repair');
-      } else {
-        setStep('complete');
-      }
-
-      // Update project with results and save variations
-      if (project && result.variations && result.variations.length > 0) {
-        await fetch(`/api/projects/${project.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status: 'COMPLETED',
-            analysis: result.analysis,
-            architectPlan: result.blueprint,
-            qaResults: result.qaResults?.[0],
-          }),
-        });
-
-        for (let i = 0; i < result.variations.length; i++) {
-          const variation = result.variations[i];
-          await fetch(`/api/projects/${project.id}/variations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              number: i + 1,
-              html: variation.html,
-            }),
-          });
-        }
-      }
+      // Redirect to dashboard — generation runs in background
+      router.push('/');
     } catch (error) {
-      stepTimers.forEach(clearTimeout);
       console.error('V3 scratch generation error:', error);
-      setGenerationError(error instanceof Error ? error.message : 'Generation failed');
-      setStep('upload');
-    } finally {
+      setGenerationError(error instanceof Error ? error.message : 'Failed to start generation');
       setIsGenerating(false);
     }
   };
@@ -836,21 +754,23 @@ function V3BuilderContent() {
                     </div>
                   </div>
                 ) : isGenerating ? (
-                  <div className="mt-6 p-4 bg-muted rounded-lg">
+                  <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
                     <div className="flex items-center gap-3">
                       <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
                       <div>
-                        <p className="font-medium">
-                          {inputMode === 'scratch'
-                            ? 'AI is synthesizing components from your brief...'
-                            : 'AI Analyzer is extracting components...'}
-                        </p>
+                        <p className="font-medium">Generation in progress...</p>
                         <p className="text-sm text-muted-foreground">
-                          {inputMode === 'scratch'
-                            ? 'Designing page structure, flow, and conversion strategy'
-                            : 'Detecting headlines, CTAs, persuasion elements, and styles'}
+                          Running the full V3 pipeline in the background. You can safely leave this page.
                         </p>
                       </div>
+                    </div>
+                    <div className="mt-3">
+                      <Link href="/">
+                        <Button variant="outline" size="sm">
+                          <ArrowLeft className="h-4 w-4 mr-2" />
+                          Back to Dashboard
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 ) : (
