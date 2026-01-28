@@ -6,6 +6,7 @@ This document defines specialized AI agents for developing the Adhoq Landing Pag
 
 | # | Agent | Scope | When to Use |
 |---|-------|-------|-------------|
+| 0 | **Orchestrator Agent** | Task decomposition & coordination | Complex features spanning multiple agents |
 | 1 | **LP Generator Agent** | AI pipeline code | Modifying analyzer, builder, prompt writer, or agents |
 | 2 | **UI Agent** | Frontend components | Dashboard, builder UI, settings panels |
 | 3 | **API Agent** | Route handlers | New endpoints, request validation, background jobs |
@@ -14,6 +15,115 @@ This document defines specialized AI agents for developing the Adhoq Landing Pag
 | 6 | **QA & Test Agent** | Testing & quality | Unit tests, integration tests, test infrastructure |
 | 7 | **LLM Integration Agent** | AI providers | Adding new LLM providers, prompt optimization |
 | 8 | **Deploy & Infra Agent** | DevOps | DigitalOcean, environment config, CI/CD |
+
+---
+
+## Agent 0: Orchestrator Agent
+
+**Scope**: Decomposes high-level feature requests into ordered sub-tasks, assigns them to specialist agents, manages dependencies, and validates the integrated result.
+
+**When to use**: Any task that touches 2+ specialist agents, any ROADMAP item, or any request where the implementation path is unclear.
+
+**Responsibilities**:
+
+1. **Analyze the request** — Read ROADMAP.md, ARCHITECTURE.md, and CLAUDE.md to understand scope
+2. **Decompose into sub-tasks** — Break the feature into atomic tasks, each owned by one specialist agent
+3. **Determine execution order** — Identify dependencies (e.g., Schema before API before UI)
+4. **Assign agents** — Map each sub-task to the right specialist with full context
+5. **Manage parallelism** — Launch independent tasks concurrently, sequential tasks in order
+6. **Validate integration** — After all agents complete, verify files work together (imports resolve, types match, API contracts align)
+7. **Run verification** — Build check (`npm run build`), lint (`npm run lint`), and tests if available
+8. **Update ROADMAP.md** — Mark completed items, add notes on what was built
+
+**Key files** (reads all, writes none directly):
+- `ROADMAP.md` — Feature roadmap and priorities
+- `ARCHITECTURE.md` — System architecture for impact analysis
+- `CLAUDE.md` — Coding conventions and gotchas
+- `AGENTS.md` — Agent capabilities and file ownership
+- `package.json` — Dependencies and scripts
+
+**Decomposition rules**:
+
+1. **Schema first** — Any task requiring new DB models or fields starts with Schema Agent
+2. **API before UI** — Backend endpoints must exist before frontend can consume them
+3. **Types are shared** — If a new type is needed by multiple agents, Schema Agent or the first agent creates it in `src/types/`
+4. **LP Generator is independent** — AI pipeline changes rarely block or are blocked by other agents
+5. **Tests last** — QA & Test Agent runs after implementation agents complete
+6. **Deploy last** — Deploy Agent handles environment/config changes after code is stable
+
+**Dependency graph template**:
+
+```
+Schema Agent ──→ API Agent ──→ UI Agent
+                    │
+                    ├──→ LP Generator Agent (if AI changes needed)
+                    │
+                    └──→ Parser Agent (if input changes needed)
+                              │
+                              ▼
+                    QA & Test Agent
+                              │
+                              ▼
+                    Deploy & Infra Agent
+```
+
+**Task creation pattern**:
+
+For each sub-task, the Orchestrator creates a task with:
+- **Subject**: Action verb + specific scope (e.g., "Add Campaign model to Prisma schema")
+- **Description**: What to build, which files to modify, acceptance criteria
+- **Agent**: Which specialist agent handles it
+- **Blocked by**: Task IDs that must complete first
+- **Context**: Key files to read, patterns to follow, types to use
+
+**Example — "Add A/B testing support"**:
+
+```
+Task 1 (Schema Agent):
+  Subject: Add Campaign model and A/B tracking fields
+  Files: prisma/schema.prisma, src/lib/db/campaigns.ts
+  Blocked by: none
+
+Task 2 (API Agent):
+  Subject: Create /api/campaigns CRUD and /api/track pixel endpoint
+  Files: src/app/api/campaigns/*, src/app/api/track/*
+  Blocked by: Task 1
+
+Task 3 (LP Generator Agent):
+  Subject: Inject tracking pixel into generated HTML variations
+  Files: src/lib/builder-agent/index.ts
+  Blocked by: none (independent)
+
+Task 4 (UI Agent):
+  Subject: Add A/B Testing tab to dashboard with campaign management
+  Files: src/app/page.tsx, src/components/landing-builder/campaign-manager.tsx
+  Blocked by: Task 2
+
+Task 5 (QA & Test Agent):
+  Subject: Write tests for campaign CRUD and tracking pixel injection
+  Blocked by: Tasks 2, 3
+
+Task 6 (Deploy Agent):
+  Subject: Add Redis config for real-time stats, update .do/app.yaml
+  Blocked by: Task 2
+```
+
+Tasks 1 and 3 run in parallel. Task 2 waits for 1. Tasks 4 and 6 wait for 2. Task 5 waits for 2 and 3.
+
+**Validation checklist** (run after all agents complete):
+
+- [ ] `npm run build` passes with no TypeScript errors
+- [ ] `npm run lint` passes
+- [ ] All new imports resolve correctly
+- [ ] API request/response types match between frontend and backend
+- [ ] New Prisma models have corresponding query functions in `src/lib/db/`
+- [ ] New API routes follow existing patterns (error handling, status codes)
+- [ ] New components follow existing patterns (`"use client"`, props + onChange)
+- [ ] ROADMAP.md updated with completed items
+- [ ] No orphaned files or dead imports
+
+**Example prompt**:
+> "I want to add template marketplace support (V5 roadmap item). Analyze the current codebase, break this into sub-tasks across the right agents, determine the execution order, and coordinate the implementation. Use the task management system to track progress."
 
 ---
 
@@ -225,17 +335,40 @@ This document defines specialized AI agents for developing the Adhoq Landing Pag
 
 ---
 
-## Multi-Agent Workflow Example
+## Multi-Agent Workflow
 
-For a complex task like "Add A/B testing support", you'd coordinate multiple agents:
+All complex features flow through the **Orchestrator Agent** (Agent 0):
 
-1. **Schema Agent**: Add tracking fields, campaign model, update Variation model
-2. **API Agent**: Create `/api/campaigns` CRUD + `/api/track` pixel endpoint
-3. **LP Generator Agent**: Modify builder to inject tracking pixel into generated HTML
-4. **UI Agent**: Add A/B test dashboard tab, campaign creation wizard
-5. **Deploy Agent**: Add Redis for real-time stats, update deployment config
+```
+User Request
+     │
+     ▼
+┌─────────────────────┐
+│  Orchestrator (0)   │  Reads ROADMAP, ARCHITECTURE, CLAUDE.md
+│                     │  Decomposes into sub-tasks
+│                     │  Determines dependencies
+└──────────┬──────────┘
+           │ Creates tasks with blockedBy
+           ▼
+┌──────────────────────────────────────────────────┐
+│                Task Execution                     │
+│                                                   │
+│  Phase 1 (parallel):  Schema (4) + LP Gen (1)    │
+│  Phase 2 (sequential): API (3) ← waits for 4    │
+│  Phase 3 (parallel):  UI (2) + Parser (5)        │
+│  Phase 4:             QA & Test (6)               │
+│  Phase 5:             Deploy (8)                  │
+└──────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Orchestrator (0)   │  Validates integration
+│                     │  npm run build + lint
+│                     │  Updates ROADMAP.md
+└─────────────────────┘
+```
 
-Each agent works independently on its files, coordinated by the task management system.
+For simple tasks that touch only one agent's files, skip the Orchestrator and use the specialist directly.
 
 ---
 
