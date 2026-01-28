@@ -73,7 +73,7 @@ async function generateInBackground(projectId: string, project: ProjectData) {
     const options = (project.options as Record<string, unknown>) || {};
 
     const generateResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/generate`,
+      `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/api/generate`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,7 +152,7 @@ async function generateV3InBackground(projectId: string, project: ProjectData) {
     }
 
     const generateResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/v3/generate`,
+      `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/api/v3/generate`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
